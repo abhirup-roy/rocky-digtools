@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import json
 import logging
 import os
 from collections import OrderedDict
@@ -96,7 +97,7 @@ def launch_sweep(
     sweep_name: str,
     json_path: str,
     meshdir: str = "meshes",
-    template_dir: Optional[str] = None,
+    template_dir: Optional[str | os.PathLike] = None,
     autolaunch=True,
     loc: str = "bb-gpu",
     custom_sh: Optional[str] = None,
@@ -199,30 +200,3 @@ def launch_sweep(
 
     if autolaunch:
         _tqdm_launch([str(d) for d in case_dirs], total_cases)
-
-
-if __name__ == "__main__":
-    """Example of a regular sweep"""
-    # make_cases(
-    #     sweep_name='reg_sweep_example',
-    #     json_path='json/swesp_reg.json',
-    #     autolaunch=True,
-    #     loc='az-gpu',
-    #     target='GPU'
-    # )
-
-    """Example of an OFAT sweep"""
-    # launch_ofat(
-    #     'ofat_example',
-    #     autolaunch=True,
-    #     json_path='json/ofat_base.json',
-    #     ofat_values={
-    #         'parameters':['n_corners', 'sq_degree'],
-    #         'test_range':[(5, 50), (2.0, 10.0)],
-    #         'hold_values': ['m', 'm']
-    #     },
-    #     n_points=5,
-    #     loc='az-gpu',
-    #     target='GPU',
-    #     ncpus=20
-    # )

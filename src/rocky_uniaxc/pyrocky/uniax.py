@@ -8,7 +8,6 @@ of setting up, running, and post-processing
 import time
 import os
 import pathlib
-import shutil
 import subprocess
 from typing import Literal, Optional, Any
 from dataclasses import dataclass, asdict, fields, MISSING
@@ -22,7 +21,7 @@ import ansys.rocky.core as rocky_api
 
 from .. import particles_shapes
 from ..compr_meshgen import create_meshes
-from .. import ROCKY_EXE_PATH, HEADLESS
+from .. import HEADLESS
 from .helpers import pyrocky_run
 
 __all__ = ["Settings", "UniaxialCompressionSimulation"]

@@ -4,14 +4,17 @@ Shared utilities for DOE (Design of Experiments) modules.
 Provides common utilities for parameter handling, script generation,
 and case directory management used by both sweep.py and ofat.py.
 """
+
 from __future__ import annotations
 
+import json
 import logging
 import os
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+import jinja2
 
 logger = logging.getLogger(__name__)
 
@@ -127,71 +130,68 @@ def render_pyrocky_script(
     case_dir: str | Path,
     script_contxt: dict,
     meshdir: str = "meshes",
-) -> str:
+) -> None:
     """
-    Render a pyrocky uniaxial compression simulation script.
+    Render a pyrocky uniaxial compression simulation by dumping settings to JSON.
+    Also creates a small launcher script.
 
     Args:
         case_dir: Path to the case directory
         script_contxt: Dictionary containing script template variables
         meshdir: Name of the mesh subdirectory
-
-    Returns:
-        str: Rendered Python script content
     """
     case_dir = Path(case_dir)
     mesh_path = os.path.abspath(case_dir / meshdir)
 
-    return f"""
-import os
-from rocky_uniaxc.pyrocky.uniax import Settings, UniaxialCompressionSimulation
+    settings_dict = {
+        "particle_box_len": script_contxt["L_BOX"],
+        "t_fill": 1.0,
+        "t_settle": 0.5,
+        "t_compress": 2.0,
+        "p_compress": script_contxt["P_COMPRESS"],
+        "p_radius": script_contxt["RADIUS_P"],
+        "p_density": script_contxt["DENSITY_P"],
+        "p_youngmod": script_contxt["YOUNGMOD_P"],
+        "p_poisson": script_contxt["POISSON_P"],
+        "fric_dyn_pp": script_contxt["DYNAMIC_FRICTION_PP"],
+        "fric_stat_pp": script_contxt["STATIC_FRICTION_PP"],
+        "cor_pp": script_contxt["COR_PP"],
+        "fric_dyn_pw": script_contxt["DYNAMIC_FRICTION_PW"],
+        "fric_stat_pw": script_contxt["STATIC_FRICTION_PW"],
+        "cor_pw": script_contxt["COR_PW"],
+        "normal_force_model": script_contxt["NORMAL_MODEL"].strip('"'),
+        "tangential_force_model": script_contxt["TANG_MODEL"].strip('"'),
+        "adhesion_model": script_contxt["ADH_MODEL"].strip('"'),
+        "rolling_fric": script_contxt.get("ROLLING_FRICTION", 0.0),
+        "rolling_model": script_contxt["ROLLING_MODEL"].strip('"'),
+        "processor": script_contxt["XPU"].strip('"'),
+        "mesh_dir": mesh_path,
+        "shape_name": script_contxt["SHAPE"].strip('"'),
+        "vert_ar": script_contxt["VERT_AR"],
+        "horiz_ar": script_contxt["HORIZ_AR"],
+        "n_corners": script_contxt["N_CORNERS"],
+        "sq_degree": script_contxt["SQ_DEGREE"],
+        "particle_path": script_contxt["PARTICLE_PATH"],
+        "smoothness": script_contxt["SMOOTHNESS"],
+    }
 
-def run():
-    settings = Settings(
-        project_dir=r"{os.path.abspath(case_dir)}",
-        particle_box_len={script_contxt["L_BOX"]},
-        t_fill=1.0,
-        t_settle=0.5,
-        t_compress=2.0,
-        p_compress={script_contxt["P_COMPRESS"]},
+    settings_path = case_dir / "settings.json"
+    with open(settings_path, "w") as f:
+        json.dump(settings_dict, f, indent=4)
 
-        p_radius={script_contxt["RADIUS_P"]},
-        p_density={script_contxt["DENSITY_P"]},
-        p_youngmod={script_contxt["YOUNGMOD_P"]},
-        p_poisson={script_contxt["POISSON_P"]},
-        fric_dyn_pp={script_contxt["DYNAMIC_FRICTION_PP"]},
-        fric_stat_pp={script_contxt["STATIC_FRICTION_PP"]},
-        cor_pp={script_contxt["COR_PP"]},
-        fric_dyn_pw={script_contxt["DYNAMIC_FRICTION_PW"]},
-        fric_stat_pw={script_contxt["STATIC_FRICTION_PW"]},
-        cor_pw={script_contxt["COR_PW"]},
+    script_content = f"""import sys
+import subprocess
+from pathlib import Path
 
-        normal_force_model={repr(script_contxt["NORMAL_MODEL"].strip('"'))},
-        tangential_force_model={repr(script_contxt["TANG_MODEL"].strip('"'))},
-        adhesion_model={repr(script_contxt["ADH_MODEL"].strip('"'))},
-        rolling_fric={script_contxt.get("ROLLING_FRICTION", 0.0)},
-        rolling_model={repr(script_contxt["ROLLING_MODEL"].strip('"'))},
-
-        processor={repr(script_contxt["XPU"].strip('"'))},
-        mesh_dir=r"{mesh_path}",
-
-        shape_name={repr(script_contxt["SHAPE"].strip('"'))},
-        vert_ar={script_contxt["VERT_AR"]},
-        horiz_ar={script_contxt["HORIZ_AR"]},
-        n_corners={script_contxt["N_CORNERS"]},
-        sq_degree={script_contxt["SQ_DEGREE"]},
-        particle_path={repr(script_contxt["PARTICLE_PATH"])},
-        smoothness={script_contxt["SMOOTHNESS"]},
-    )
-    sim = UniaxialCompressionSimulation(settings)
-    sim.execute()
-
-if __name__ == "__main__":
-    run()
+# Run the single runner module
+subprocess.run([sys.executable, "-m", "rocky_uniaxc.case_runner", "settings.json"], check=True)
 """
+    (case_dir / "script_uniax.py").write_text(script_content)
 
 
-def script_context_from_params(params: SimParams, target: str, meshdir: str = "meshes") -> dict:
+def script_context_from_params(
+    params: SimParams, target: str, meshdir: str = "meshes"
+) -> dict:
     """
     Build script context dictionary from SimParams.
 
@@ -244,7 +244,7 @@ def prepare_case(
     case_dir: Path,
     script_contxt: dict,
     backend: str,
-    rocky_template: Optional[object] = None,
+    rocky_template: Optional[jinja2.Template] = None,
 ) -> None:
     """
     Write simulation script to case directory.
@@ -263,8 +263,7 @@ def prepare_case(
         rendered = rocky_template.render(script_contxt)
         script_path.write_text(rendered)
     elif backend == "pyrocky":
-        content = render_pyrocky_script(case_dir, script_contxt)
-        script_path.write_text(content)
+        render_pyrocky_script(case_dir, script_contxt)
     else:
         raise ValueError(f"Unknown backend: {backend}")
 
