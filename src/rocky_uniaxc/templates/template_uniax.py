@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""Jinja2 template for Rocky pre/post-processing uniaxial compression scripts.
+
+This file is rendered by the ``rocky_prepost`` backend at sweep-launch time.
+Jinja2 placeholders (``{{ ... }}``) are substituted with per-case parameter
+values before the script is written to the case directory and executed by
+Rocky.
+"""
 
 import sys
 import os
@@ -124,10 +131,14 @@ active_euls = {}
 
 
 def setup(filename="uniaxial_compression.rocky") -> None:
-    """
-    Setup the Rocky project and study for uniaxial compression simulation.
-    If the project file already exists, it will load the existing project.
-    Otherwise, it will create a new project and study.
+    """Set up the Rocky project and study for uniaxial compression.
+
+    If the project file already exists it is opened; otherwise a new
+    project is created and saved.
+
+    Args:
+        filename: Name of the Rocky project file. Defaults to
+            ``"uniaxial_compression.rocky"``.
     """
 
     global project, study
@@ -152,8 +163,10 @@ def setup(filename="uniaxial_compression.rocky") -> None:
 
 
 def load_meshes(insert=True) -> None:
-    """
-    Load the walls into the Rocky project.
+    """Load the compression walls and optional insert surface into the project.
+
+    Args:
+        insert: If ``True``, also import the insert inlet surface.
     """
 
     if not _run_flag and not _resume_flag:
@@ -197,9 +210,7 @@ def load_meshes(insert=True) -> None:
 
 
 def load_material_properties():
-    """
-    Load the material properties for the particles and walls.
-    """
+    """Create particle and wall materials and assign them to the geometry."""
     if not _run_flag and not _resume_flag:
         return
 
@@ -252,8 +263,10 @@ def load_interactions() -> None:
 
 
 def set_psd() -> None:
-    """
-    Set the particle size distribution for the particles.
+    """Set the particle size distribution for the particles.
+
+    Supports monodisperse (scalar radius) and polydisperse (dict of radii
+    to cumulative percentages) distributions.
     """
     if not _run_flag and not _resume_flag:
         return
@@ -307,8 +320,16 @@ def set_psd() -> None:
 
 
 def gen_particle(shape_dict: dict[str, float | str]) -> None:
-    """
-    Create a particle of a specific shape.
+    """Create a particle of a specific shape in the Rocky study.
+
+    Args:
+        shape_dict: Dictionary with keys ``"name"``, ``"vert_ar"``,
+            ``"horiz_ar"``, ``"n_corners"``, ``"sq_degree"``,
+            ``"particle_path"``, and ``"smoothness"``.
+
+    Raises:
+        ValueError: If the shape type is unknown or a custom polyhedron
+            STL path is invalid.
     """
     global particle, study
     study = app.GetStudy()
@@ -356,9 +377,7 @@ def gen_particle(shape_dict: dict[str, float | str]) -> None:
 
 
 def sim_physics() -> None:
-    """
-    Set the physics for the simulation.
-    """
+    """Configure contact force models and gravity for the simulation."""
 
     if not _run_flag and not _resume_flag:
         return
@@ -376,8 +395,11 @@ def sim_physics() -> None:
 
 
 def insertion_settings(insert=True) -> None:
-    """
-    Set the insertion settings for the particles.
+    """Configure particle insertion settings.
+
+    Args:
+        insert: If ``True``, use surface inlet insertion. If ``False``,
+            use volumetric insertion.
     """
     if not _run_flag and not _resume_flag:
         return
@@ -479,14 +501,14 @@ def set_domain_settings() -> None:
 
 
 def _select_processor(solver, processor: str) -> None:
-    """
-    Handle the selection of the processor for the simulation.
-    Based on the PROCESSOR variable, it sets the simulation target.
-    Writes a warning to a file if GPU is not available and switches to CPU.
+    """Select the simulation processor (CPU or GPU).
 
-    **Parameters:**
-    - `solver`: The solver object from the Rocky study.
-    - `processor`: The processor to use for the simulation ('GPU' or 'CPU').
+    Falls back to CPU with a warning file if the requested GPU is
+    unavailable.
+
+    Args:
+        solver: The solver object from the Rocky study.
+        processor: Processor to use — ``"GPU"`` or ``"CPU"``.
     """
     if processor == "GPU":
         if processor not in solver.GetValidSimulationTargetValues():
@@ -504,13 +526,14 @@ def _select_processor(solver, processor: str) -> None:
 
 
 def simulate(insert: bool = True, autotimestep: bool = True, timestep=None) -> None:
-    """
-    Starts simulation of the uniaxial compression test.
+    """Start the uniaxial compression simulation.
 
-    **Parameters:**
-    - `autotimestep` (bool): If True, Rocky will automatically determine the timestep.
-    - `timestep` (float): If autotimestep is False, this sets the fixed timestep in seconds.
-
+    Args:
+        insert: Whether the fill phase is included in timing.
+        autotimestep: If ``True``, Rocky determines the timestep
+            automatically. Defaults to ``True``.
+        timestep: Fixed timestep in seconds. Only used when
+            ``autotimestep=False``.
     """
 
     if not _run_flag:
@@ -547,11 +570,7 @@ def simulate(insert: bool = True, autotimestep: bool = True, timestep=None) -> N
 
 
 def load_modules():
-    """
-    Load the contacts data
-    and enable the intensity calculation.
-    This module is used to compute the power input for the shearing wall
-    """
+    """Enable contacts data collection and adhesive contact reporting."""
 
     global study
 
@@ -582,19 +601,18 @@ def _get_cropped_region(particles, time_step, sample_frac=0.9):
 
 
 def _calc_bulk_dens(particles, time_step, sample_frac=0.9) -> float:
-    """
-    Calculates bulk density of particles at a given time step.
-    This takes the range of particles positions, takes a fraction of
-    the domain and calculates the bulk density based on the mass in
-    volume using rho = m / V.
+    """Calculate bulk density at a given time step.
 
-    **Parameters:**
-    - `particles`: The RAParticles object from the Rocky study.
-    - `time_step`: The time step at which to calculate the bulk density.
-    - `sample_frac`: Fraction of the domain length to sample for bulk density calculation.
+    Samples a fraction of the domain and computes
+    :math:`\\rho = m / V`.
 
-    **Returns:**
-    - `bulk_density`: The bulk density of the particles at the given time step.
+    Args:
+        particles: Rocky particles collection.
+        time_step: Time-step index.
+        sample_frac: Fraction of the domain to sample. Defaults to 0.9.
+
+    Returns:
+        Bulk density in kg/m³.
     """
     cube_selection = _get_cropped_region(particles, time_step, sample_frac)
 
@@ -684,13 +702,15 @@ def _calc_shear_strength(particles, time_step, sample_frac=0.9) -> float:
 
 
 def post_process(plot: Optional[bool] = True) -> None:
-    """
-    Post-process the simulation results. Includes calculating bulk density,
-    voidage, Hausner ratio, and compression index. Optionally plots the results.
-    Results are saved into a SQLite database
+    """Post-process simulation results.
 
-    **Parameters:**
-    - `plot` (bool): If True, generates plots of bulk density and voidage over time.
+    Computes uncompressed and compressed bulk densities, Hausner ratio,
+    compression index, contact numbers, and shear strengths.  Optionally
+    generates plots and writes results to CSV and SQLite.
+
+    Args:
+        plot: If ``True``, generate and save time-series plots. Defaults
+            to ``True``.
     """
     global study, project, particle
 

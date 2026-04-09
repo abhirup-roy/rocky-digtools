@@ -1,13 +1,18 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+"""Mesh generation for uniaxial compression simulations using GMSH.
+
+Generates STL mesh files for the top compression wall, bottom wall, and
+insert surface used in uniaxial compression tests.
+
+Author:
+    Abhirup Roy
+
+Status:
+    Development
+"""
 
 __author__ = "Abhirup Roy"
 __email__ = "axr154@bham.ac.uk"
 __status__ = "Development"
-
-"""
-This script generates meshes for Uniaxial Copmressions.
-"""
 
 
 import os
@@ -17,6 +22,13 @@ import gmsh
 
 
 def create_topwall(size, meshsize, out_dir):
+    """Generate the top compression wall mesh and save as STL.
+
+    Args:
+        size: Side length of the square wall (m).
+        meshsize: Desired mesh element size.
+        out_dir: Directory to write ``compressive_wall1.stl`` into.
+    """
     gmsh.model.add("wall1")
     p1 = gmsh.model.geo.addPoint(-size / 2, -size, -size / 2, meshSize=meshsize)
     p2 = gmsh.model.geo.addPoint(size / 2, -size, -size / 2, meshSize=meshsize)
@@ -36,6 +48,13 @@ def create_topwall(size, meshsize, out_dir):
 
 
 def create_bottomwall(size, meshsize, out_dir):
+    """Generate the bottom compression wall mesh and save as STL.
+
+    Args:
+        size: Side length of the square wall (m).
+        meshsize: Desired mesh element size.
+        out_dir: Directory to write ``compressive_wall2.stl`` into.
+    """
     gmsh.model.add("wall2")
     p1 = gmsh.model.geo.addPoint(size / 2, size, -size / 2, meshSize=meshsize)
     p2 = gmsh.model.geo.addPoint(-size / 2, size, -size / 2, meshSize=meshsize)
@@ -55,6 +74,13 @@ def create_bottomwall(size, meshsize, out_dir):
 
 
 def create_insert(size, meshsize, out_dir):
+    """Generate the insert surface mesh and save as STL.
+
+    Args:
+        size: Side length of the square insert (m).
+        meshsize: Desired mesh element size.
+        out_dir: Directory to write ``insert.stl`` into.
+    """
     gmsh.model.add("insert")
     p1 = gmsh.model.geo.addPoint(-size / 2, -size / 2, size / 2, meshSize=meshsize)
     p2 = gmsh.model.geo.addPoint(size / 2, -size / 2, size / 2, meshSize=meshsize)
@@ -76,11 +102,16 @@ def create_insert(size, meshsize, out_dir):
 def create_meshes(
     size: float, meshsize: float = 0.001, out_dir: str | pathlib.Path = "meshes"
 ) -> None:
-    """Create all required meshes with GMSH and save them to the specified directory.
+    """Create all required meshes with GMSH and save them to disk.
+
+    Generates three STL files — ``compressive_wall1.stl``,
+    ``compressive_wall2.stl``, and ``insert.stl`` — in the output
+    directory.
+
     Args:
-        size (float): Size of the walls and insert.
-        meshsize (float, optional): Desired mesh resolution. Defaults to 0.001.
-        out_dir (str | pathlib.Path, optional): Directory to save the meshes. Defaults to "meshes".
+        size: Side length of the walls and insert (m).
+        meshsize: Desired mesh resolution. Defaults to 0.001.
+        out_dir: Directory to save the meshes. Defaults to ``"meshes"``.
     """
     out_dir = pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

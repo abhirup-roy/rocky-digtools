@@ -1,5 +1,11 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+"""Full-factorial parameter sweep generation and execution.
+
+Reads a JSON configuration specifying parameter ranges, computes all
+combinations via the Cartesian product, generates case directories, mesh
+files, simulation scripts, and SLURM submission scripts, and optionally
+launches the jobs.
+"""
+
 import json
 import logging
 import os
@@ -25,36 +31,17 @@ from .. import BACKEND
 
 logger = logging.getLogger(__name__)
 
-"""
-This script generates multiple cases for Rocky DEM simulations using a template and a set of parameters.
-It creates a directory for each case, populates the template with parameters, and generates the necessary mesh files.
-It also creates a slurm sbatch script for each case and can automatically launch the job on a slurm cluster.
-It uses the jinja2 library for templating and the gmsh library for mesh generation.
-
-The script uses a JSON file to define the parameters for the simulations.
-The parameters include properties of the particles, interactions, and experimental settings.
-The script iterates over all combinations of parameters, creating a case directory for each combination.
-
-Example usage:
-    from rocky_sweep import make_cases
-    make_cases(
-        meshdir='meshes',
-        json_path='params.json',
-        template_dir='templates',
-        autolaunch=True
-    )
-"""
-
 
 def iter_params(json_path: str) -> list[SimParams]:
-    """
-    Iterate over all parameter combinations.
+    """Read a sweep JSON configuration and expand all parameter combinations.
 
     Args:
-        json_path: Path to json config for sweep
+        json_path: Path to the JSON configuration file defining parameter
+            ranges for the sweep.
 
     Returns:
-        List of SimParams instances for each parameter combination
+        List of :class:`~rocky_uniaxc.doe._doe_utils.SimParams` instances,
+        one per parameter combination.
     """
     with open(json_path, "r") as f_params:
         params = json.load(f_params, object_pairs_hook=OrderedDict)
@@ -105,20 +92,36 @@ def launch_sweep(
     ncpus: Optional[int] = None,
     backend: Optional[str] = None,
 ):
-    """
-    Generate and launch sweep cases
+    """Generate and launch a full-factorial parameter sweep.
+
+    Reads parameter ranges from a JSON configuration, computes all
+    combinations, creates case directories with simulation scripts and SLURM
+    submission files, and optionally submits the jobs.
 
     Args:
-        sweep_name: A string for the title of the sweep being carried out
-        json_path: A path to the json config for the sweep or simulation
-        template_dir: A path to the script templates
-        autolaunch: Whether to automatically launch scripts
-        loc: Specify cluster script to use. Currently only works with
-            'az-gpu', 'bb-cpu', 'custom'. N.B. If using custom, specify
-            the `custom_sh` arg
-        custom_sh: A custom SLURM script to run simulations. Only needed if
-            using `loc=custom`
-        backend: Which backend to use. Options are 'rocky_prepost' or 'pyrocky'
+        sweep_name: Title of the sweep, used as the root directory name.
+        json_path: Path to the JSON configuration file defining parameter
+            ranges.
+        meshdir: Name of the mesh subdirectory inside each case. Defaults to
+            ``"meshes"``.
+        template_dir: Optional path to a directory containing custom Jinja2
+            templates. Defaults to the package's built-in templates.
+        autolaunch: Whether to automatically submit SLURM jobs after setup.
+            Defaults to ``True``.
+        loc: Cluster location for SLURM scripts. Accepted values are
+            ``"bb-gpu"``, ``"bb-cpu"``, ``"az-gpu"``, and ``"custom"``.
+        custom_sh: Custom SLURM script content. Only used when
+            ``loc="custom"``.
+        target: Compute target — ``"CPU"`` or ``"GPU"``. Defaults to
+            ``"GPU"``.
+        ncpus: Number of CPUs to request (CPU target only).
+        backend: Simulation backend — ``"rocky_prepost"`` or ``"pyrocky"``.
+            Defaults to the package-level :data:`BACKEND` setting.
+
+    Raises:
+        ValueError: If an unsupported backend, target, or location is
+            specified.
+        FileNotFoundError: If ``template_dir`` does not exist.
     """
     if backend is None:
         backend = BACKEND

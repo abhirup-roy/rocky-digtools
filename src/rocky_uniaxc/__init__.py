@@ -1,10 +1,12 @@
-"""
-pyuniaxc: Tools for setting up multiscale uniaxial compression
+"""Tools for setting up and analysing multiscale uniaxial compression simulations.
 
-This package provides tools for setting up and analysing
-multiscale uniaxial compression.
+This package provides utilities for configuring, launching, and post-processing
+uniaxial compression experiments using Ansys Rocky DEM. It supports full
+parameter sweeps, one-factor-at-a-time (OFAT) designs, and pyrocky-based
+simulation workflows.
 
-Author: Abhirup Roy
+Author:
+    Abhirup Roy
 """
 
 __version__ = "0.1"
@@ -37,15 +39,19 @@ BACKEND = "pyrocky"
 
 def set_rocky_exe_path(path: str) -> None:
     """Set the path to the Rocky executable for the rocky_uniaxc package.
-    This allows users to specify the path to the Rocky executable if it is not in a standard location or not found automatically. This allows the pyrocky API to use the specified executable for running simulations.
-        Args:
-            path (str): The file path to the Rocky executable.
-        Raises:
-            FileNotFoundError: If the specified path does not point to a valid file.
-        Usage:
-            set_rocky_exe_path("/path/to/rocky/executable")
-        Note:
-            Ensure that the provided path is correct and that the Rocky executable is accessible at that location.
+
+    Allows users to specify the path to the Rocky executable if it is not in a
+    standard location or not found automatically. The pyrocky API will use the
+    specified executable for running simulations.
+
+    Args:
+        path: The file path to the Rocky executable.
+
+    Raises:
+        FileNotFoundError: If the specified path does not point to a valid file.
+
+    Example:
+        >>> set_rocky_exe_path("/path/to/rocky/executable")
     """
 
     if not _pathlib.Path(path).is_file():
@@ -56,30 +62,39 @@ def set_rocky_exe_path(path: str) -> None:
 
 
 def set_headless_mode(headless: bool) -> None:
-    """Set the headless mode for Rocky simulations in the rocky_uniaxc package.
-    This function allows users to specify whether Rocky simulations should run in headless mode (without a graphical user interface) or with a GUI. This setting will affect how the pyrocky API launches Rocky for simulations.
-        Args:
-            headless (bool): If True, Rocky will run in headless mode. If False, Rocky will launch with its GUI.
-        Usage:
-            set_headless_mode(True)  # Run Rocky in headless mode
-            set_headless_mode(False) # Run Rocky with GUI
-        Note:
-            Running in headless mode is more suitable for batch processing or running on servers without display capabilities, while running with the GUI can be useful for interactive use and debugging.
+    """Set the headless mode for Rocky simulations.
+
+    Controls whether Rocky simulations run in headless mode (without a GUI) or
+    with the graphical interface. This setting affects how the pyrocky API
+    launches Rocky.
+
+    Args:
+        headless: If ``True``, Rocky runs in headless mode. If ``False``,
+            Rocky launches with its GUI.
+
+    Example:
+        >>> set_headless_mode(True)   # batch processing / servers
+        >>> set_headless_mode(False)  # interactive use / debugging
     """
     global HEADLESS
     HEADLESS = headless
 
 
 def set_backend(backend: str) -> None:
-    """Set the backend for Rocky simulations in the rocky_uniaxc package.
-    This function allows users to specify which backend to use for running Rocky simulations. The backend determines how the package interacts with the Rocky executable. Accepted values are "pyrocky" or "rocky_prepost".
-        Args:
-            backend (str): The backend to use: "pyrocky" or "rocky_prepost".
-        Usage:
-            set_backend("pyrocky")  # Use the pyrocky backend for simulations
-        Note:
-            Ensure that the specified backend is supported and properly configured in the rocky_uniaxc package. Using an unsupported backend will result in an error when attempting to run simulations.
-            All non-simulation utilities use pyrocky regardless of this setting
+    """Set the backend for Rocky simulations.
+
+    Determines how the package interacts with the Rocky executable.
+    All non-simulation utilities use pyrocky regardless of this setting.
+
+    Args:
+        backend: The backend to use. Must be ``"pyrocky"`` or
+            ``"rocky_prepost"``.
+
+    Raises:
+        ValueError: If an unsupported backend is specified.
+
+    Example:
+        >>> set_backend("pyrocky")
     """
     if backend not in ["pyrocky", "rocky_prepost"]:
         raise ValueError(

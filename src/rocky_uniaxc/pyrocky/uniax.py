@@ -1,8 +1,9 @@
-"""
-Pyrocky API wrapper for uniaxial compression setup.
-This module defines a Settings dataclass for storing simulation parameters
-and a UniaxialCompressionSimulation class that encapsulates the entire workflow
-of setting up, running, and post-processing
+"""Pyrocky API wrapper for uniaxial compression simulations.
+
+Defines a :class:`Settings` dataclass for storing simulation parameters and a
+:class:`UniaxialCompressionSimulation` class that encapsulates the entire
+workflow of configuring, running, and post-processing a uniaxial compression
+test in Ansys Rocky.
 """
 
 import time
@@ -13,11 +14,9 @@ from typing import Literal, Optional, Any
 from dataclasses import dataclass, asdict, fields, MISSING
 import json
 import pandas as pd
-import warnings
 
 import numpy as np
 import matplotlib.pyplot as plt
-import ansys.rocky.core as rocky_api
 
 from .. import particles_shapes
 from ..compr_meshgen import create_meshes
@@ -29,6 +28,43 @@ __all__ = ["Settings", "UniaxialCompressionSimulation"]
 
 @dataclass(slots=True)
 class Settings:
+    """Simulation parameters for a uniaxial compression test.
+
+    Attributes:
+        project_dir: Directory where the Rocky project is saved.
+        particle_box_len: Side length of the cubic particle domain (m).
+        t_fill: Duration of the particle fill phase (s).
+        t_settle: Duration of the settling phase (s).
+        t_compress: Duration of the compression phase (s).
+        p_compress: Applied compression pressure (Pa).
+        p_radius: Particle radius (m) or a dict mapping radii to
+            probabilities for polydisperse distributions.
+        p_density: Particle density (kg/m³).
+        p_youngmod: Particle Young's modulus (Pa).
+        p_poisson: Particle Poisson's ratio.
+        fric_dyn_pp: Dynamic friction coefficient (particle–particle).
+        fric_stat_pp: Static friction coefficient (particle–particle).
+        cor_pp: Coefficient of restitution (particle–particle).
+        fric_dyn_pw: Dynamic friction coefficient (particle–wall).
+        fric_stat_pw: Static friction coefficient (particle–wall).
+        cor_pw: Coefficient of restitution (particle–wall).
+        normal_force_model: Normal contact force model.
+        tangential_force_model: Tangential contact force model.
+        adhesion_model: Adhesion model.
+        rolling_fric: Rolling friction coefficient.
+        rolling_model: Rolling resistance model.
+        neighbor_search: Neighbour-search algorithm.
+        processor: Compute target (``"CPU"`` or ``"GPU"``).
+        mesh_dir: Path to the mesh directory. Auto-resolved if ``None``.
+        plots_dir: Path to the plots directory. Auto-resolved if ``None``.
+        shape_name: Particle shape identifier.
+        vert_ar: Vertical aspect ratio.
+        horiz_ar: Horizontal aspect ratio.
+        n_corners: Number of corners for polyhedral shapes.
+        sq_degree: Superquadric degree.
+        particle_path: Path to an STL file for custom polyhedra.
+        smoothness: Surface smoothness parameter.
+    """
     project_dir: str | pathlib.Path
 
     particle_box_len: float
@@ -100,6 +136,12 @@ class Settings:
         self._validate()
 
     def _validate(self):
+        """Validate all parameter constraints and raise on failure.
+
+        Raises:
+            ValueError: If any parameter violates its constraints, with a
+                summary of all errors.
+        """
         errors = []
 
         # --- Positive floats ---
@@ -231,7 +273,14 @@ class Settings:
 
     @property
     def avg_particle_radius(self) -> float:
-        """Mean particle radius, weighted by probability for polydisperse distributions."""
+        """Mean particle radius, weighted by probability for polydisperse distributions.
+
+        For a monodisperse distribution this simply returns the scalar radius.
+        For a polydisperse dict it computes the probability-weighted mean.
+
+        Returns:
+            The average particle radius in metres.
+        """
         if isinstance(self.p_radius, float):
             return self.p_radius
         radii = np.array(list(self.p_radius.keys()))
@@ -242,6 +291,15 @@ class Settings:
     def from_json(
         cls, path: str | pathlib.Path, project_dir: str | pathlib.Path
     ) -> "Settings":
+        """Create a :class:`Settings` instance from a JSON configuration file.
+
+        Args:
+            path: Path to the JSON configuration file.
+            project_dir: Directory where the Rocky project will be saved.
+
+        Returns:
+            A new ``Settings`` instance populated from the file.
+        """
         with open(path, "r") as f:
             data = json.load(f)
 
@@ -287,6 +345,17 @@ class Settings:
 
     @classmethod
     def from_dict(cls, data: dict):
+        """Create a :class:`Settings` instance from a dictionary.
+
+        Args:
+            data: Dictionary of field names to values.
+
+        Returns:
+            A new ``Settings`` instance.
+
+        Raises:
+            ValueError: If any required field is missing.
+        """
         required_fields = [
             f.name
             for f in fields(cls)
@@ -301,6 +370,28 @@ class Settings:
 
 @pyrocky_run(headless=HEADLESS)
 class UniaxialCompressionSimulation:
+    """End-to-end uniaxial compression simulation in Ansys Rocky.
+
+    Wraps the full workflow — project creation, mesh loading, material and
+    interaction setup, particle generation, physics configuration, domain
+    settings, simulation execution, and post-processing — into a single
+    class.
+
+    Args:
+        settings: Simulation parameters as a :class:`Settings` instance.
+        insertion: Whether to use surface insertion (``True``) or volumetric
+            insertion (``False``). Defaults to ``True``.
+        filename: Name of the Rocky project file. Defaults to
+            ``"uniaxial_compression.rocky"``.
+
+    Attributes:
+        rocky: The active Rocky API session (injected by
+            :class:`~rocky_uniaxc.pyrocky.helpers.pyrocky_run`).
+        settings: The simulation parameters.
+        insertion: Insertion mode flag.
+        filename: Project file name.
+    """
+
     rocky: Any
 
     def __init__(
@@ -323,10 +414,20 @@ class UniaxialCompressionSimulation:
 
     @staticmethod
     def _ser(proxy) -> dict:
+        """Serialise a Rocky API proxy for cross-call argument passing.
+
+        Args:
+            proxy: A Rocky API proxy object.
+
+        Returns:
+            Serialised representation suitable for passing to another API call.
+        """
         """Serialise a Rocky API proxy for passing as an argument to another API call."""
         return proxy.serialize(proxy)
 
     def setup(self):
+        """Create and save a new Rocky project and study."""
+
         self._project = self.rocky.api.CreateProject()
         self._project.SaveProject(
             str(pathlib.Path(self.settings.project_dir) / self.filename)
@@ -335,6 +436,12 @@ class UniaxialCompressionSimulation:
         self._study.SetName("Uniaxial Compression")
 
     def load_meshes(self, insert=True):
+        """Import the top wall, bottom wall, and optionally the insert surface.
+
+        Args:
+            insert: If ``True``, also import the insert inlet surface.
+                Defaults to ``True``.
+        """
         assert self.settings.mesh_dir is not None
         mesh_dir = pathlib.Path(self.settings.mesh_dir).resolve()
 
@@ -372,6 +479,7 @@ class UniaxialCompressionSimulation:
             self._mesh["insert_inlet"] = insert_inlet
 
     def load_material_properties(self):
+        """Create particle and wall materials and assign them to the geometry."""
         material_collection = self._study.GetMaterialCollection()
 
         particle_mat = material_collection.AddSolidMaterial()
@@ -394,6 +502,7 @@ class UniaxialCompressionSimulation:
         self._materials["wall_mat"] = wall_mat
 
     def load_interactions(self):
+        """Configure particle–particle and particle–wall interaction parameters."""
         pm = self._materials["particle_mat"]
         wm = self._materials["wall_mat"]
 
@@ -414,6 +523,12 @@ class UniaxialCompressionSimulation:
         pw_interaction.SetStaticFriction(self.settings.fric_stat_pw)
 
     def gen_particle(self):
+        """Create a particle in the study and configure its shape and size.
+
+        Raises:
+            ValueError: If the shape type is unsupported or required files
+                are missing.
+        """
         self._particle = self._study.CreateParticle()
         self._particle.SetName("Particle")
 
@@ -456,6 +571,7 @@ class UniaxialCompressionSimulation:
         )
 
     def sim_physics(self):
+        """Set the contact force models and gravity direction."""
         physics = self._study.GetPhysics()
         physics.SetNormalForceModel(self.settings.normal_force_model)
         physics.SetTangentialForceModel(self.settings.tangential_force_model)
@@ -466,6 +582,15 @@ class UniaxialCompressionSimulation:
         physics.SetGravityZDirection(0)
 
     def insertion_settings(self, insert=True):
+        """Configure the particle inlet for the fill phase.
+
+        Args:
+            insert: If ``True``, use surface inlet insertion. If ``False``,
+                use volumetric insertion (not yet implemented).
+
+        Raises:
+            NotImplementedError: If volumetric insertion is requested.
+        """
 
         fill_box_vol = self.settings.particle_box_len**3
         particle_vol = (4 / 3) * np.pi * self.settings.avg_particle_radius**3
@@ -493,6 +618,12 @@ class UniaxialCompressionSimulation:
             )
 
     def move_top_wall(self, insert=True):
+        """Apply a motion frame to the top wall for settling and compression.
+
+        Args:
+            insert: If ``True``, timing accounts for the fill phase.
+                Defaults to ``True``.
+        """
         frame_source = self._study.GetMotionFrameSource()
         top_wall_frame = frame_source.NewFrame()
 
@@ -528,6 +659,7 @@ class UniaxialCompressionSimulation:
         top_wall_frame.ApplyTo(self._ser(self._mesh["top_wall"]))
 
     def set_domain_settings(self):
+        """Configure the simulation domain bounds and periodic boundaries."""
         domain_settings = self._study.GetDomainSettings()
         domain_settings.DisableUseBoundaryLimits()
         domain_settings.DisablePeriodicAtGeometryLimits()
@@ -565,6 +697,11 @@ class UniaxialCompressionSimulation:
         )
 
     def _check_nvidia_gpu(self) -> int:
+        """Count available NVIDIA GPUs on the system.
+
+        Returns:
+            Number of NVIDIA GPUs detected, or 0 on failure.
+        """
         try:
             output = subprocess.check_output(["nvidia-smi", "-L"], encoding="utf-8")
             return sum(1 for line in output.strip().splitlines() if line)
@@ -572,6 +709,13 @@ class UniaxialCompressionSimulation:
             return 0
 
     def _select_processor(self, solver):
+        """Select the simulation processor (CPU/GPU) on the solver.
+
+        Falls back to CPU if the requested GPU is unavailable.
+
+        Args:
+            solver: The Rocky solver object.
+        """
         if self.settings.processor == "GPU":
             if not (n_gpus := self._check_nvidia_gpu()):
                 print("Warning: No NVIDIA GPU detected. Falling back to CPU.")
@@ -588,12 +732,19 @@ class UniaxialCompressionSimulation:
             solver.SetNumberOfProcessors(cpus)
 
     def load_modules(self):
+        """Enable contacts data collection and adhesive contact reporting."""
         contacts_data = self._study.GetContactData()
         contacts_data.EnableCollectContactsData()
         if self.settings.adhesion_model != "none":
             contacts_data.EnableIncludeAdhesiveContacts()
 
     def simulate(self, insert=True):
+        """Run the simulation to completion.
+
+        Args:
+            insert: If ``True``, total duration includes the fill phase.
+                Defaults to ``True``.
+        """
         solver = self._study.GetSolver()
         self._select_processor(solver)
 
@@ -619,6 +770,20 @@ class UniaxialCompressionSimulation:
         print("Simulation completed.")
 
     def _get_cropped_region(self, particles, time_step, sample_frac=0.9):
+        """Get or create a cropped cuboid region for sampling.
+
+        The region is centred on the mean particle position and spans
+        ``sample_frac`` of the particle coordinate range in each direction.
+        Results are cached per time step.
+
+        Args:
+            particles: Rocky particles collection.
+            time_step: Time-step index.
+            sample_frac: Fraction of the coordinate range to sample.
+
+        Returns:
+            A Rocky cube-process region object.
+        """
         if time_step in self.active_boxes:
             return self.active_boxes[time_step]
 
@@ -647,6 +812,16 @@ class UniaxialCompressionSimulation:
         return cube_selection
 
     def _calc_bulk_density(self, particles, time_step, sample_frac=0.9):
+        """Calculate the bulk density within a cropped region.
+
+        Args:
+            particles: Rocky particles collection.
+            time_step: Time-step index.
+            sample_frac: Fraction of the domain to sample.
+
+        Returns:
+            Bulk density in kg/m³.
+        """
 
         cube_selection = self._get_cropped_region(particles, time_step, sample_frac)
 
@@ -661,6 +836,16 @@ class UniaxialCompressionSimulation:
         return sample_mass / sample_vol
 
     def _calc_contact_no(self, particles, time_step, sample_frac=0.9):
+        """Calculate the average number of contacts per particle.
+
+        Args:
+            particles: Rocky particles collection.
+            time_step: Time-step index.
+            sample_frac: Fraction of the domain to sample.
+
+        Returns:
+            Average contacts per particle.
+        """
         cube_selection = self._get_cropped_region(particles, time_step, sample_frac)
 
         all_contacts_x = cube_selection.GetGridFunction("Contact : X").GetArray(
@@ -696,6 +881,29 @@ class UniaxialCompressionSimulation:
         return n_contacts
 
     def post_process(self, sample_frac=0.9, plot=True, return_computed_metrics=False):
+        """Post-process simulation results.
+
+        Computes uncompressed and compressed bulk densities, contact numbers,
+        and the contacts ratio.  Optionally generates time-series plots and
+        appends results to a CSV file.
+
+        Args:
+            sample_frac: Fraction of the domain to sample for calculations.
+                Defaults to 0.9.
+            plot: If ``True``, generate and save time-series plots.
+                Defaults to ``True``.
+            return_computed_metrics: If ``True``, return computed metrics as
+                a tuple. Defaults to ``False``.
+
+        Returns:
+            A 5-tuple ``(uncompr_dens, compr_dens, uncompr_contacts,
+            compr_contacts, contacts_ratio)`` if
+            ``return_computed_metrics`` is ``True``; otherwise a tuple of
+            ``None`` values.
+
+        Raises:
+            IndexError: If the settled time step cannot be located.
+        """
         time_set = self._study.GetTimeSet()
         timeset_arr = time_set.GetValues()
         try:
@@ -783,6 +991,24 @@ class UniaxialCompressionSimulation:
             return (None, None, None, None, None)
 
     def execute(self, sample_frac=0.9, plot=True, return_computed_metrics=False):
+        """Run the full simulation workflow from setup to post-processing.
+
+        Sequentially calls :meth:`load_meshes`, :meth:`load_material_properties`,
+        :meth:`load_interactions`, :meth:`gen_particle`, :meth:`sim_physics`,
+        :meth:`insertion_settings`, :meth:`move_top_wall`,
+        :meth:`set_domain_settings`, :meth:`load_modules`,
+        :meth:`simulate`, and :meth:`post_process`.
+
+        Args:
+            sample_frac: Fraction of the domain to sample. Defaults to 0.9.
+            plot: Whether to generate plots. Defaults to ``True``.
+            return_computed_metrics: Whether to return computed metrics.
+                Defaults to ``False``.
+
+        Returns:
+            The post-processing result tuple, or ``None`` if no metrics are
+            computed.
+        """
         self.load_meshes(insert=self.insertion)
         self.load_material_properties()
         self.load_interactions()

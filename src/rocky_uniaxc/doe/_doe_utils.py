@@ -1,8 +1,8 @@
-"""
-Shared utilities for DOE (Design of Experiments) modules.
+"""Shared utilities for DOE (Design of Experiments) modules.
 
-Provides common utilities for parameter handling, script generation,
-and case directory management used by both sweep.py and ofat.py.
+Provides common dataclasses and helper functions for parameter handling,
+script generation, and case directory management used by both
+:mod:`rocky_uniaxc.doe.sweep` and :mod:`rocky_uniaxc.doe.ofat`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ShapeConfig:
-    """Configuration for particle shape in simulations."""
+    """Configuration for a particle shape in simulations.
+
+    Attributes:
+        name: Shape identifier (e.g. ``"sphere"``, ``"polyhedron"``).
+        vert_ar: Vertical aspect ratio.
+        horiz_ar: Horizontal aspect ratio.
+        n_corners: Number of corners for polyhedral shapes.
+        sq_degree: Superquadric degree.
+        particle_path: File path to an STL for custom polyhedra.
+        smoothness: Surface smoothness parameter.
+    """
 
     name: str = "sphere"
     vert_ar: float = 1.0
@@ -33,7 +43,16 @@ class ShapeConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> ShapeConfig:
-        """Create ShapeConfig from a dictionary."""
+        """Create a ShapeConfig from a dictionary.
+
+        Missing keys are filled with class defaults.
+
+        Args:
+            d: Dictionary of shape configuration values.
+
+        Returns:
+            A new ``ShapeConfig`` instance.
+        """
         return cls(
             name=d.get("name", "sphere"),
             vert_ar=d.get("vert_ar", 1.0),
@@ -47,10 +66,29 @@ class ShapeConfig:
 
 @dataclass
 class SimParams:
-    """
-    Typed representation of simulation parameters.
+    """Typed representation of simulation parameters.
 
-    Replaces magic index access in sweep.py iter_params.
+    Replaces magic-index tuple access with named fields for clarity.
+
+    Attributes:
+        radius: Particle radius in metres.
+        density: Particle density in kg/m³.
+        poisson: Poisson's ratio.
+        youngmod: Young's modulus in Pa.
+        fric_dyn_pp: Dynamic friction coefficient (particle–particle).
+        fric_stat_pp: Static friction coefficient (particle–particle).
+        fric_rolling_pp: Rolling friction coefficient (particle–particle).
+        cor_pp: Coefficient of restitution (particle–particle).
+        fric_dyn_pw: Dynamic friction coefficient (particle–wall).
+        fric_stat_pw: Static friction coefficient (particle–wall).
+        cor_pw: Coefficient of restitution (particle–wall).
+        box_len: Length of the simulation box in metres.
+        p_compress: Compression pressure in Pa.
+        normal: Normal contact force model name.
+        tangential: Tangential contact force model name.
+        rolling: Rolling resistance model name.
+        adhesion: Adhesion model name.
+        shape: Particle shape configuration.
     """
 
     radius: float
@@ -74,7 +112,17 @@ class SimParams:
 
     @classmethod
     def from_tuple(cls, params: tuple, shape: ShapeConfig | dict) -> SimParams:
-        """Create SimParams from a tuple and shape object."""
+        """Create a SimParams from a parameter tuple and a shape specification.
+
+        Args:
+            params: A 17-element tuple of simulation parameters in the
+                canonical order (radius, density, …, adhesion).
+            shape: A :class:`ShapeConfig` instance or a dictionary that can
+                be passed to :meth:`ShapeConfig.from_dict`.
+
+        Returns:
+            A new ``SimParams`` instance.
+        """
         if isinstance(shape, dict):
             shape = ShapeConfig.from_dict(shape)
         return cls(
@@ -101,21 +149,21 @@ class SimParams:
 
 @contextmanager
 def case_directory(sweep_name: str | Path, case_idx: int, meshdir: str = "meshes"):
-    """
-    Context manager for creating and managing a case directory.
+    """Context manager for creating and managing a case directory.
 
-    Creates the following structure:
-        sweep_name/case_i/
+    Creates the following directory structure::
+
+        sweep_name/case_<case_idx>/
             plots/
-            meshes/
+            <meshdir>/
 
     Args:
-        sweep_name: Name or path of the sweep directory
-        case_idx: Index of the case
-        meshdir: Name of the mesh subdirectory
+        sweep_name: Name or path of the sweep directory.
+        case_idx: Index of the case.
+        meshdir: Name of the mesh subdirectory.
 
     Yields:
-        Path: Path to the created case directory
+        pathlib.Path: Path to the created case directory.
     """
     sweep_path = Path(sweep_name)
     case_path = sweep_path / f"case_{case_idx}"
@@ -131,14 +179,15 @@ def render_pyrocky_script(
     script_contxt: dict,
     meshdir: str = "meshes",
 ) -> None:
-    """
-    Render a pyrocky uniaxial compression simulation by dumping settings to JSON.
-    Also creates a small launcher script.
+    """Render a pyrocky uniaxial compression simulation case.
+
+    Dumps simulation settings to a ``settings.json`` file and creates a small
+    launcher script (``script_uniax.py``) that invokes the case runner.
 
     Args:
-        case_dir: Path to the case directory
-        script_contxt: Dictionary containing script template variables
-        meshdir: Name of the mesh subdirectory
+        case_dir: Path to the case directory.
+        script_contxt: Dictionary containing script template variables.
+        meshdir: Name of the mesh subdirectory.
     """
     case_dir = Path(case_dir)
     mesh_path = os.path.abspath(case_dir / meshdir)
@@ -192,16 +241,15 @@ subprocess.run([sys.executable, "-m", "rocky_uniaxc.case_runner", "settings.json
 def script_context_from_params(
     params: SimParams, target: str, meshdir: str = "meshes"
 ) -> dict:
-    """
-    Build script context dictionary from SimParams.
+    """Build a script context dictionary from a :class:`SimParams` instance.
 
     Args:
-        params: SimParams instance
-        target: Processor target (CPU, GPU, etc.)
-        meshdir: Name of mesh subdirectory
+        params: Simulation parameters.
+        target: Processor target (``"CPU"``, ``"GPU"``, etc.).
+        meshdir: Name of the mesh subdirectory.
 
     Returns:
-        dict: Context dictionary for template rendering
+        Dictionary of template variables for script rendering.
     """
     rolling_fric = params.fric_rolling_pp if params.rolling != "none" else 0
 
@@ -236,7 +284,14 @@ def script_context_from_params(
 
 
 def get_unique_box_lens(params_list: list[SimParams]) -> set[float]:
-    """Get unique box lengths from a list of SimParams."""
+    """Get unique box lengths from a list of :class:`SimParams`.
+
+    Args:
+        params_list: List of simulation parameter instances.
+
+    Returns:
+        Set of unique ``box_len`` values.
+    """
     return {p.box_len for p in params_list}
 
 
@@ -246,14 +301,18 @@ def prepare_case(
     backend: str,
     rocky_template: Optional[jinja2.Template] = None,
 ) -> None:
-    """
-    Write simulation script to case directory.
+    """Write a simulation script to the case directory.
 
     Args:
-        case_dir: Path to case directory
-        script_contxt: Script context dictionary
-        backend: 'rocky_prepost' or 'pyrocky'
-        rocky_template: Jinja2 template (only needed for rocky_prepost backend)
+        case_dir: Path to the case directory.
+        script_contxt: Script context dictionary for template rendering.
+        backend: Simulation backend — ``"rocky_prepost"`` or ``"pyrocky"``.
+        rocky_template: Jinja2 template instance. Required when
+            ``backend="rocky_prepost"``.
+
+    Raises:
+        ValueError: If ``backend="rocky_prepost"`` and no template is
+            provided, or if the backend string is unrecognised.
     """
     script_path = case_dir / "script_uniax.py"
 

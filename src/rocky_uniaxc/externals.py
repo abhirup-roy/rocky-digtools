@@ -1,3 +1,10 @@
+"""External file format handlers for Rocky simulation data.
+
+Provides utilities for exporting particle geometries from Rocky as STL,
+converting them to VTK unstructured grids with per-cell data (orientation,
+velocity, etc.), and generating VTK files for visualisation in ParaView.
+"""
+
 from typing import Optional
 import os
 import tempfile
@@ -9,9 +16,15 @@ from .pyrocky import pyrocky_run
 
 
 def _get_rotation_matrix(vec: np.ndarray) -> np.ndarray:
-    """
-    Compute rotation matrix to align z-axis with the given vector.
-    Using Rodrigues' rotation formula.
+    """Compute a rotation matrix that aligns the z-axis with the given vector.
+
+    Uses Rodrigues' rotation formula.
+
+    Args:
+        vec: A 3-element rotation vector (axis × angle).
+
+    Returns:
+        A 3×3 rotation matrix as a :class:`~numpy.ndarray`.
     """
     angle = np.linalg.norm(vec)
 
@@ -25,7 +38,16 @@ def _get_rotation_matrix(vec: np.ndarray) -> np.ndarray:
 
 
 def _load_particle_stl(file_path: str):
-    """Load particle STL file and return vertices and faces."""
+    """Load a particle STL file and return its vertices and face indices.
+
+    Args:
+        file_path: Path to the STL file.
+
+    Returns:
+        A tuple ``(vertices, faces)`` where ``vertices`` is an
+        ``(N, 3)`` array and ``faces`` is an ``(M, 3)`` array of
+        indices.  Returns ``(None, None)`` on failure.
+    """
     try:
         p_mesh = mesh.Mesh.from_file(file_path)
         verts, inv_idxs = np.unique(
@@ -40,6 +62,15 @@ def _load_particle_stl(file_path: str):
 
 
 def export_particle_stl(project, study) -> str:
+    """Export the first particle's geometry to an STL file.
+
+    Args:
+        project: Rocky project API object.
+        study: Rocky study API object.
+
+    Returns:
+        Path to the exported STL file.
+    """
 
     study = project.GetStudy()
     particle = study.GetParticleCollection()[0]
@@ -62,8 +93,20 @@ def _vtk_gen(
     residence_times: np.ndarray,
     output_vtk_path: str,
 ):
-    """
-    Convert STL particle data and positions to VTK format.
+    """Convert STL particle data and per-particle attributes to VTK format.
+
+    Instantiates the template mesh at each particle position with the
+    correct rotation and writes an unstructured-grid VTK file with
+    per-cell data (orientation, velocity, etc.).
+
+    Args:
+        stl_path: Path to the template particle STL file.
+        positions: ``(N, 3)`` array of particle positions.
+        orientations: ``(N, 3)`` array of rotation vectors.
+        trans_vel_data: ``(N, 3)`` array of translational velocities.
+        rotat_vel_data: ``(N, 3)`` array of rotational velocities.
+        residence_times: ``(N,)`` array of residence times.
+        output_vtk_path: Output path for the VTK file (without extension).
     """
     template_verts, template_faces = _load_particle_stl(stl_path)
     if template_verts is None or template_faces is None:
@@ -182,15 +225,21 @@ def _vtk_gen(
 
 @pyrocky_run
 def generate_vtk(rocky, rocky_filepath: str, output_dir: str):
-    """
-    Generate VTK files for particle positions, orientations, and velocities from a Rocky simulation.
+    """Generate VTK files for particle data at every saved time step.
+
+    Reads particle positions, orientations, translational and rotational
+    velocities from a Rocky project and writes one VTK unstructured-grid
+    file per time step.
 
     Args:
-        rocky_filepath (str): Path to the Rocky project file (.rocky).
-        output_dir (str): Directory where the VTK files will be saved.
+        rocky: Rocky API session (injected by
+            :class:`~rocky_uniaxc.pyrocky.helpers.pyrocky_run`).
+        rocky_filepath: Path to the Rocky project file (``.rocky``).
+        output_dir: Directory where the VTK files will be saved.
+
     Raises:
-        FileNotFoundError: If the Rocky file is not found.
-        ValueError: If the provided file is not a valid Rocky project file.
+        FileNotFoundError: If the Rocky project file does not exist.
+        ValueError: If the file is not a valid ``.rocky`` project file.
     """
     if not os.path.isfile(rocky_filepath):
         raise FileNotFoundError(f"Rocky file not found: {rocky_filepath}")

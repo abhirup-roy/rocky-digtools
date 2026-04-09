@@ -1,3 +1,12 @@
+"""One-Factor-at-a-Time (OFAT) experiment setup and execution.
+
+Generates OFAT experiment designs from a JSON base configuration, creates case
+directories with simulation scripts and SLURM submission files, and optionally
+launches the jobs.
+"""
+
+import os
+
 import json
 import logging
 from collections import OrderedDict
@@ -21,13 +30,37 @@ logger = logging.getLogger(__name__)
 
 
 def iter_ofat(json_path: str, ofat_values: dict[str, list | str], n_points: int):
-    """
-    Iterate over all parameter combinations.
+    """Compute all OFAT experiment points from a base configuration.
+
+    Reads the base parameter values from a JSON file and generates an
+    experiment matrix where each factor is varied independently while all
+    others are held at a designated level.
 
     Args:
-        json_path: Path to json config for sweep
-        ofat_values: A dictionary containing the OFAT parameters, test range.
-            Accepts the following keys: 'parameters', 'test_range', and 'hold_values'.
+        json_path: Path to the JSON configuration file with base parameters.
+        ofat_values: Dictionary specifying the OFAT design. Must contain:
+
+            - ``"parameters"``: list of parameter names to vary.
+            - ``"test_range"``: list of ``(lower, upper)`` tuples for each
+              parameter.
+            - ``"hold_values"``: list of hold strategies — ``"h"`` (high),
+              ``"l"`` (low), or ``"m"`` (mid) — for the baseline of each
+              parameter.
+
+        n_points: Number of evenly-spaced levels to generate for each factor.
+
+    Returns:
+        A tuple ``(experiments_df, base_dict)`` where:
+
+        - ``experiments_df`` is a :class:`~pandas.DataFrame` with one row per
+          experiment.
+        - ``base_dict`` is a dictionary of parameters that remain constant
+          across all experiments.
+
+    Raises:
+        ValueError: If the OFAT specification is invalid, parameters are
+            unrecognised, ranges are out of bounds, or list values appear in
+            base parameters.
     """
     with open(json_path, "r") as f_params:
         params = json.load(f_params, object_pairs_hook=OrderedDict)
@@ -142,7 +175,7 @@ def iter_ofat(json_path: str, ofat_values: dict[str, list | str], n_points: int)
             raise ValueError(
                 f"Invalid test range for parameter '{k}': ({lb_i}, {ub_i})"
             )
-        elif not (lb <= lb_i <= ub and lb <= ub_i <= ub):
+        elif not (lb <= lb_i <= ub and lb <= ub_i <= ub):  # type: ignore
             raise ValueError(
                 f"Test range for parameter '{k}' with values ({lb_i}, {ub_i}) is out of bounds ({lb}, {ub})."
             )
@@ -202,19 +235,70 @@ def iter_ofat(json_path: str, ofat_values: dict[str, list | str], n_points: int)
 
 def launch_ofat(
     sweep_name: str,
-    autolaunch: bool,
-    json_path: str,
     ofat_values: dict[str, list | str],
+    n_points: int,
+    json_path: str | os.PathLike,
+    autolaunch: bool = True,
     loc: str = "bb-cpu",
     target: str = "CPU",
-    n_points: int = 10,
+    backend: Optional[str] = None,
     ncpus: Optional[int] = None,
     ngpus: int = 1,
     run_days: int = 10,
-    template_dir: Optional[str] = None,
+    template_dir: Optional[str | os.PathLike] = None,
     custom_sh: Optional[str] = None,
-    backend: Optional[str] = None,
-):
+) -> None:
+    """Launch a One-Factor-at-a-Time (OFAT) experiment block.
+
+    Generates the necessary case directories, input scripts, and SLURM
+    submission scripts for a series of OFAT experiments based on the provided
+    configuration.
+
+    Example::
+
+        ofat_values = {
+            "parameters": ["cor_pp", "fric_dyn_pp"],
+            "test_range": [(0.1, 0.5), (0.2, 0.8)],
+            "hold_values": ["m", "l"],
+        }
+        launch_ofat(
+            sweep_name="ofat_sweep",
+            ofat_values=ofat_values,
+            n_points=5,
+            json_path="config.json",
+        )
+
+    Args:
+        sweep_name: Name of the OFAT experiment block, used for directory
+            naming.
+        ofat_values: Dictionary specifying the OFAT design. Must contain
+            ``"parameters"`` (list of names), ``"test_range"`` (list of
+            ``(min, max)`` tuples), and ``"hold_values"`` (list of ``"h"``,
+            ``"l"``, or ``"m"`` strategies).
+        n_points: Number of test points to generate for each factor.
+        json_path: Path to the JSON configuration file with base parameters.
+        autolaunch: If ``True``, automatically submit the SLURM jobs after
+            setup. Defaults to ``True``.
+        loc: Cluster location for SLURM scripts (e.g. ``"bb-cpu"``,
+            ``"az-gpu"``).
+        target: Compute target — ``"CPU"`` or ``"GPU"``. Must be compatible
+            with ``loc``. Defaults to ``"CPU"``.
+        backend: Simulation backend — ``"rocky_prepost"`` or ``"pyrocky"``.
+            Defaults to the package-level :data:`BACKEND` setting.
+        ncpus: Number of CPUs to request (CPU target only).
+        ngpus: Number of GPUs to request (GPU target only). Defaults to 1.
+        run_days: Requested job runtime in days. Defaults to 10.
+        template_dir: Optional path to a directory with custom Jinja2
+            templates. Must contain ``template_uniax.py``.
+        custom_sh: Custom SLURM script content. Only used when
+            ``loc="custom"``.
+
+    Raises:
+        ValueError: If an unsupported backend, target, or location is
+            specified.
+        FileNotFoundError: If ``template_dir`` does not exist.
+        NotImplementedError: If ``target="MULTI_GPU"`` is requested.
+    """
     if not backend:
         backend = BACKEND
     if backend not in ["rocky_prepost", "pyrocky"]:
@@ -235,6 +319,7 @@ def launch_ofat(
         raise ValueError(f"{target} is not valid for location {loc}")
 
     target_quoted = f'"{target}"'
+    # =========
 
     # Load template
     if not template_dir:
@@ -248,7 +333,7 @@ def launch_ofat(
     rocky_template = rocky_templ_env.get_template("template_uniax.py")
 
     experiments_df, base_dict = iter_ofat(
-        json_path=json_path, ofat_values=ofat_values, n_points=n_points
+        json_path=str(json_path), ofat_values=ofat_values, n_points=n_points
     )
 
     total_cases = len(experiments_df)

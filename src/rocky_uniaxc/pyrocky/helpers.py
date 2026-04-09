@@ -7,7 +7,15 @@ import inspect
 
 
 def find_rocky_exe():
-    """Attempt to find the Rocky executable in common locations and system PATH."""
+        """Attempt to locate the Rocky executable.
+
+    Searches common installation paths and the system ``PATH`` for the Rocky
+    binary.
+
+    Returns:
+        The path to the Rocky executable as a string, or ``None`` if it
+        cannot be found.
+    """
     possible_paths = [
         shutil.which("Rocky"),  # Check system PATH
         "/usr/local/bin/Rocky",
@@ -21,21 +29,36 @@ def find_rocky_exe():
 
 
 class pyrocky_run:
-    """Context manager for launching and closing the Rocky application.
-    Can be used as a decorator for functions or classes that require access to the Pyrocky API.
+    """Context manager, decorator, and class decorator for Rocky API sessions.
 
-    Examples:
-        >>> @pyrocky_run()
-        ... def my_function(rocky):
-        ...     # Use the rocky API here
-        ...     pass
+    Manages the lifecycle of a Rocky application instance — launching on
+    entry and closing on exit.  Can be used in three ways:
 
-        >>> @pyrocky_run()
-        ... class MyRockyClass:
-        ...     def __init__(self):
-        ...         self.rocky = None
-        ...     def do_something(self):
+    1. **As a context manager**::
 
+           with pyrocky_run() as rocky:
+               ...
+
+    2. **As a function decorator** — the decorated function receives an
+       injected ``rocky`` keyword argument::
+
+           @pyrocky_run()
+           def my_function(rocky):
+               ...
+
+    3. **As a class decorator** — the wrapped class receives a ``rocky``
+       attribute that is initialised on instantiation and closed on
+       garbage collection::
+
+           @pyrocky_run()
+           class MyRockyClass:
+               ...
+
+    Args:
+        headless: If ``True`` (default), launch Rocky in headless mode.
+
+    Raises:
+        FileNotFoundError: If the Rocky executable cannot be located.
     """
 
     def __init__(self, headless=True):
