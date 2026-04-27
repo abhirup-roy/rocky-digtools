@@ -158,9 +158,16 @@ class Settings:
             if val <= 0:
                 errors.append(f"'{name}' must be > 0, got {val}.")
 
+        # --- Bounded [0, 0.5] fields ---
+        poisson_fields = {
+            "p_poisson": self.p_poisson,
+        }
+        for name, val in poisson_fields.items():
+            if not (0.0 <= val <= 0.5):
+                errors.append(f"'{name}' must be in [0, 0.5], got {val}.")
+
         # --- Bounded [0, 1] fields ---
         unit_fields = {
-            "p_poisson": self.p_poisson,
             "cor_pp": self.cor_pp,
             "cor_pw": self.cor_pw,
         }
@@ -270,6 +277,15 @@ class Settings:
             raise ValueError(
                 "Invalid Settings:\n" + "\n".join(f"  - {e}" for e in errors)
             )
+
+    @property
+    def expected_particle_volume(self) -> float:
+        """Expected particle volume, weighting radii for polydisperse distributions."""
+        if isinstance(self.p_radius, float):
+            return (4 / 3) * np.pi * self.p_radius**3
+        radii = np.array(list(self.p_radius.keys()))
+        probs = np.array(list(self.p_radius.values()))
+        return float(np.sum((4 / 3) * np.pi * radii**3 * probs / probs.sum()))
 
     @property
     def avg_particle_radius(self) -> float:
@@ -593,7 +609,7 @@ class UniaxialCompressionSimulation:
         """
 
         fill_box_vol = self.settings.particle_box_len**3
-        particle_vol = (4 / 3) * np.pi * self.settings.avg_particle_radius**3
+        particle_vol = self.settings.expected_particle_volume
         n_particles = int(np.rint(fill_box_vol / particle_vol * 0.5))  # target 50% fill
         mass_particles = particle_vol * self.settings.p_density * n_particles
 
@@ -847,14 +863,15 @@ class UniaxialCompressionSimulation:
             Average contacts per particle.
         """
         cube_selection = self._get_cropped_region(particles, time_step, sample_frac)
+        contact_data = self._study.GetContactData()
 
-        all_contacts_x = cube_selection.GetGridFunction("Contact : X").GetArray(
+        all_contacts_x = contact_data.GetGridFunction("Contact : Coordinate : X").GetArray(
             time_step=time_step
         )
-        all_contacts_y = cube_selection.GetGridFunction("Contact : Y").GetArray(
+        all_contacts_y = contact_data.GetGridFunction("Contact : Coordinate : Y").GetArray(
             time_step=time_step
         )
-        all_contacts_z = cube_selection.GetGridFunction("Contact : Z").GetArray(
+        all_contacts_z = contact_data.GetGridFunction("Contact : Coordinate : Z").GetArray(
             time_step=time_step
         )
 
@@ -906,10 +923,11 @@ class UniaxialCompressionSimulation:
         """
         time_set = self._study.GetTimeSet()
         timeset_arr = time_set.GetValues()
+        target_time = self.settings.t_fill + self.settings.t_settle
         try:
-            settled_timeset = np.where(
-                timeset_arr == (self.settings.t_fill + self.settings.t_settle)
-            )[0][0].item()
+            settled_timeset = np.argmin(np.abs(timeset_arr - target_time)).item()
+            if abs(timeset_arr[settled_timeset] - target_time) > 1e-3:
+                raise IndexError("Matched time step is too far from target time")
         except IndexError:
             raise IndexError(
                 "Could not find time step corresponding to end of settling phase."

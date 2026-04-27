@@ -19,6 +19,11 @@ __all__ = [
     "pyrocky",
 ]
 
+import pathlib as _pathlib
+
+HEADLESS = True
+BACKEND = "pyrocky"
+ROCKY_EXE_PATH = None
 
 from .doe.sweep import launch_sweep
 from .doe.ofat import launch_ofat
@@ -29,12 +34,8 @@ from . import sweep_analysis as analyse
 from . import externals
 from . import pyrocky
 
-import pathlib as _pathlib
-
 # Auto-detect Rocky executable path at import time
 ROCKY_EXE_PATH = pyrocky.find_rocky_exe()
-HEADLESS = True
-BACKEND = "pyrocky"
 
 
 def set_rocky_exe_path(path: str) -> None:

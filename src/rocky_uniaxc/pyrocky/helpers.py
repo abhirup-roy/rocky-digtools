@@ -7,7 +7,7 @@ import inspect
 
 
 def find_rocky_exe():
-        """Attempt to locate the Rocky executable.
+    """Attempt to locate the Rocky executable.
 
     Searches common installation paths and the system ``PATH`` for the Rocky
     binary.

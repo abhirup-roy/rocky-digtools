@@ -3,7 +3,7 @@
 """Jinja2 template for Rocky pre/post-processing uniaxial compression scripts.
 
 This file is rendered by the ``rocky_prepost`` backend at sweep-launch time.
-Jinja2 placeholders (``{{ ... }}``) are substituted with per-case parameter
+Jinja2 placeholders (e.g. ``{{ variable }}``) are substituted with per-case parameter
 values before the script is written to the case directory and executed by
 Rocky.
 """
@@ -64,10 +64,20 @@ for i, _p in enumerate(
 ):
     if (i == 6) and (ROLLING_MODEL == "none") and (not _p):
         continue
-    if _p < 0 or _p > 1:
+    if (i in [2, 5]) and (_p < 0 or _p > 1): # CORs
         raise ValueError(
             f"Expected a value between 0 and 1."
             f"Got {_p} for one of the particle properties."
+        )
+    if (i == 7) and (_p < 0 or _p > 0.5): # Poisson
+        raise ValueError(
+            f"Expected a value between 0 and 0.5 for Poisson's ratio."
+            f"Got {_p}."
+        )
+    if (i not in [2, 5, 7]) and (_p < 0): # Frictions
+        raise ValueError(
+            f"Expected a non-negative value."
+            f"Got {_p} for friction."
         )
 
 # Contact models
@@ -405,7 +415,10 @@ def insertion_settings(insert=True) -> None:
         return
 
     fill_box_vol = PARTICLE_BOX_LEN**3  # m^3
-    particle_vol = (4 / 3) * np.pi * P_RADIUS**3  # m^3
+    if isinstance(P_RADIUS, dict):
+        particle_vol = sum((4/3) * np.pi * r**3 * p for r, p in P_RADIUS.items()) / sum(P_RADIUS.values())
+    else:
+        particle_vol = (4 / 3) * np.pi * P_RADIUS**3  # m^3
     # 0.6 is an avg packing fraction of spherical particles
     # Use less particles to account for non-spherical shapes
     n_particles = np.rint(fill_box_vol * 0.5 / particle_vol).astype(int).item()
@@ -449,7 +462,7 @@ def move_top_wall():
 
     # Start compression
     # Account for wall mass
-    pressure = (1e-6 * 9.81 - COMPR_PRESSURE) * PARTICLE_BOX_LEN**2  # N
+    pressure = 1e-6 * 9.81 - COMPR_PRESSURE * PARTICLE_BOX_LEN**2  # N
     compr_motion = motions.New()
     compr_motion.SetType("Additional Force")
     add_force = compr_motion.GetTypeObject()
@@ -696,7 +709,7 @@ def _calc_shear_strength(particles, time_step, sample_frac=0.9) -> float:
 
     sig1, sig2, sig3 = princ_stresses
     mean_stress = (sig1 + sig2 + sig3) / 3
-    dev_stress = (sig1 - sig3) / 3
+    dev_stress = sig1 - sig3
 
     return mean_stress, dev_stress
 
@@ -716,7 +729,10 @@ def post_process(plot: Optional[bool] = True) -> None:
 
     time_set = study.GetTimeSet()
     timeset_arr = time_set.GetValues()
-    settled_timestep = np.where(timeset_arr == (T_FILL + T_SETTLE))[0][0].item()
+    target_time = T_FILL + T_SETTLE
+    settled_timestep = np.argmin(np.abs(timeset_arr - target_time)).item()
+    if abs(timeset_arr[settled_timestep] - target_time) > 1e-3:
+        raise IndexError("Matched time step is too far from target time")
     particles = study.GetParticles()
 
     # Calculate bulk densities
@@ -735,8 +751,8 @@ def post_process(plot: Optional[bool] = True) -> None:
         particles, settled_timestep, 0.9
     )
     compr_mean_stress, compr_dev_stress = _calc_shear_strength(particles, -1, 0.9)
-    uncompr_shear_strength = uncompr_mean_stress / uncompr_dev_stress
-    compr_shear_strength = compr_mean_stress / compr_dev_stress
+    uncompr_stress_ratio = uncompr_dev_stress / uncompr_mean_stress if uncompr_mean_stress != 0 else 0
+    compr_stress_ratio = compr_dev_stress / compr_mean_stress if compr_mean_stress != 0 else 0
 
     bulk_dens = []
     contacts = []
