@@ -8,7 +8,6 @@ launches the jobs.
 import os
 
 import json
-import logging
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
@@ -16,16 +15,15 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import jinja2
+from tqdm import tqdm
 
-from . import _tqdm_launch, shapes_module_path
+from . import shapes_module_path
 from ._doe_utils import (
     case_directory,
     prepare_case,
 )
 from ..compr_meshgen import create_meshes
-from ..utils import slurm_sbatch
-
-logger = logging.getLogger(__name__)
+from ..utils import RockyScheduler
 
 
 def iter_ofat(json_path: str, ofat_values: dict[str, list | str], n_points: int):
@@ -234,15 +232,11 @@ def launch_ofat(
     ofat_values: dict[str, list | str],
     n_points: int,
     json_path: str | os.PathLike,
+    scheduler: Optional[RockyScheduler] = None,
     autolaunch: bool = True,
-    loc: str = "bb-cpu",
     target: str = "CPU",
     backend: Optional[str] = None,
-    ncpus: Optional[int] = None,
-    ngpus: int = 1,
-    run_days: int = 10,
     template_dir: Optional[str | os.PathLike] = None,
-    custom_sh: Optional[str] = None,
 ) -> None:
     """Launch a One-Factor-at-a-Time (OFAT) experiment block.
 
@@ -273,30 +267,28 @@ def launch_ofat(
             ``"l"``, or ``"m"`` strategies).
         n_points: Number of test points to generate for each factor.
         json_path: Path to the JSON configuration file with base parameters.
+        scheduler: :class:`~rocky_uniaxc.schedulers.RockyScheduler` describing
+            the SLURM configuration for each case. Defaults to
+            ``RockyScheduler.bb_cpu()`` when ``None``.
         autolaunch: If ``True``, automatically submit the SLURM jobs after
             setup. Defaults to ``True``.
-        loc: Cluster location for SLURM scripts (e.g. ``"bb-cpu"``,
-            ``"az-gpu"``).
-        target: Compute target — ``"CPU"`` or ``"GPU"``. Must be compatible
-            with ``loc``. Defaults to ``"CPU"``.
+        target: Compute target — ``"CPU"`` or ``"GPU"``. Defaults to
+            ``"CPU"``.
         backend: Simulation backend — ``"rocky_prepost"`` or ``"pyrocky"``.
             Defaults to the package-level :data:`BACKEND` setting.
-        ncpus: Number of CPUs to request (CPU target only).
-        ngpus: Number of GPUs to request (GPU target only). Defaults to 1.
-        run_days: Requested job runtime in days. Defaults to 10.
         template_dir: Optional path to a directory with custom Jinja2
             templates. Must contain ``template_uniax.py``.
-        custom_sh: Custom SLURM script content. Only used when
-            ``loc="custom"``.
 
     Raises:
-        ValueError: If an unsupported backend, target, or location is
-            specified.
+        ValueError: If an unsupported backend or target is specified.
         FileNotFoundError: If ``template_dir`` does not exist.
         NotImplementedError: If ``target="MULTI_GPU"`` is requested.
     """
+    if scheduler is None:
+        scheduler = RockyScheduler.bb_cpu()
     if not backend:
         from .. import BACKEND
+
         backend = BACKEND
     if backend not in ["rocky_prepost", "pyrocky"]:
         raise ValueError("backend must be 'rocky_prepost' or 'pyrocky'")
@@ -311,9 +303,6 @@ def launch_ofat(
         raise ValueError("Select from 'CPU', 'GPU', 'MULTI_GPU'")
     elif target == "MULTI_GPU":
         raise NotImplementedError("Multi GPU use not validated yet")
-
-    if (loc == "bb-cpu" and target == "GPU") or (loc == "az-gpu" and target == "CPU"):
-        raise ValueError(f"{target} is not valid for location {loc}")
 
     target_quoted = f'"{target}"'
     # =========
@@ -335,7 +324,6 @@ def launch_ofat(
 
     total_cases = len(experiments_df)
     vars_list = experiments_df.columns.tolist()
-    logger.info("Setting up %d OFAT cases...", total_cases)
 
     sweep_path = Path(sweep_name)
     sweep_path.mkdir(exist_ok=True)
@@ -354,16 +342,19 @@ def launch_ofat(
             "Debugging required"
         )
 
-    logger.info("Generating meshes for %d unique sizes...", len(unique_sizes))
     size_to_mesh_dir = {}
-    for size in unique_sizes:
+    for size in tqdm(unique_sizes, desc="Generating meshes", unit="mesh"):
         shared_mesh_dir = sweep_path / f"meshes_{size}"
         shared_mesh_dir.mkdir(parents=True, exist_ok=True)
         create_meshes(size, meshsize=0.01, out_dir=str(shared_mesh_dir))
         size_to_mesh_dir[size] = shared_mesh_dir
 
-    logger.info("Generating scripts and preparing jobs...")
-    for i, row in experiments_df.iterrows():
+    for i, row in tqdm(
+        experiments_df.iterrows(),
+        total=total_cases,
+        desc="Preparing OFAT cases",
+        unit="case",
+    ):
         case_dir = case_dirs[i]
 
         with case_directory(sweep_path, i, "meshes"):
@@ -414,21 +405,9 @@ def launch_ofat(
             mesh_path=size_to_mesh_dir[exp_dict["box_len"]],
         )
 
-        logger.debug("Case %d prepared", i)
+        scheduler.generate(case_dir)
 
-        slurm_sbatch(
-            str(case_dir),
-            loc=loc,
-            autolaunch=False,
-            custom_msg=custom_sh,
-            ncpus=ncpus,
-            ngpus=ngpus,
-            run_days=run_days,
-        )
-
-        logger.info("Case %d/%d prepared", i + 1, total_cases)
-
-    logger.info("\nOFAT experiments:\n%s", experiments_df)
+    tqdm.write(f"\nOFAT experiments:\n{experiments_df}")
 
     if autolaunch:
-        _tqdm_launch([str(d) for d in case_dirs], total_cases)
+        scheduler.launch_all([str(d) for d in case_dirs])
