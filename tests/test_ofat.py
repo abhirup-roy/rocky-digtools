@@ -9,7 +9,7 @@ class TestLaunchOfat:
     @pytest.fixture(autouse=True)
     def mock_deps(self):
         with (
-            patch("rocky_uniaxc.doe.ofat.slurm_sbatch"),
+            patch("rocky_uniaxc.utils.RockyScheduler.generate"),
             patch("rocky_uniaxc.doe.ofat.create_meshes"),
         ):
             yield
@@ -123,11 +123,11 @@ class TestLaunchOfat:
         sweep_name = tmp_path / "test_err"
         with pytest.raises(ValueError, match="Invalid OFAT parameters"):
             launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=ofat_json,
-            autolaunch=False,
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=ofat_json,
+                autolaunch=False,
                 backend="pyrocky",
             )
 
@@ -159,11 +159,11 @@ class TestLaunchOfat:
         # Test values must be increasing properly so we catch this common configuration mistake
         with pytest.raises(ValueError, match="Invalid test range"):
             launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=ofat_json,
-            autolaunch=False,
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=ofat_json,
+                autolaunch=False,
                 backend="pyrocky",
             )
 
@@ -210,11 +210,11 @@ class TestLaunchOfat:
         sweep_name = tmp_path / "test_err"
         with pytest.raises(ValueError, match="Shape parameters should be a single"):
             launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=str(path),
-            autolaunch=False,
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=str(path),
+                autolaunch=False,
                 backend="pyrocky",
             )
 
@@ -268,11 +268,11 @@ class TestLaunchOfat:
         # Passing multiple sizes at once won't work in OFAT mode where single-variates assume static bases
         with pytest.raises(ValueError, match="should not be lists"):
             launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=str(path),
-            autolaunch=False,
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=str(path),
+                autolaunch=False,
                 backend="pyrocky",
             )
 
@@ -280,11 +280,11 @@ class TestLaunchOfat:
         sweep_name = tmp_path / "test_err"
         with pytest.raises(ValueError, match="must contain"):
             launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values={"parameters": ["n_corners"]},
-            n_points=5,
-            json_path=ofat_json,
-            autolaunch=False,
+                sweep_name=str(sweep_name),
+                ofat_values={"parameters": ["n_corners"]},
+                n_points=5,
+                json_path=ofat_json,
+                autolaunch=False,
                 backend="pyrocky",
             )
 
@@ -298,11 +298,11 @@ class TestLaunchOfat:
         sweep_name = tmp_path / "test_err"
         with pytest.raises((ValueError, IndexError)):
             launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=ofat_json,
-            autolaunch=False,
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=ofat_json,
+                autolaunch=False,
                 backend="pyrocky",
             )
 
@@ -315,10 +315,10 @@ class TestLaunchOfat:
         sweep_name = tmp_path / "test_err"
         with pytest.raises(ValueError, match="not valid"):
             launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=ofat_json,
-            autolaunch=False,
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=ofat_json,
+                autolaunch=False,
                 backend="pyrocky",
             )

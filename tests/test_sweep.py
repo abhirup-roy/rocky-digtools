@@ -12,7 +12,7 @@ class TestLaunchSweep:
     def test_launch_sweep_minimal(self, tmp_path, sweep_json):
         sweep_name = "test_launch"
 
-        with patch("rocky_uniaxc.doe.sweep.slurm_sbatch") as mock_slurm:
+        with patch("rocky_uniaxc.utils.RockyScheduler.generate") as mock_generate:
             with patch("rocky_uniaxc.doe.sweep.create_meshes") as mock_meshes:
                 launch_sweep(
                     sweep_name=str(tmp_path / sweep_name),
@@ -42,5 +42,5 @@ class TestLaunchSweep:
 
         assert sweep_dir.joinpath("case_0", "script_uniax.py").exists()
 
-        # Verify it schedules via slurm explicitly inside loop
-        assert mock_slurm.call_count == 2
+        # Verify it generates a submission script per case
+        assert mock_generate.call_count == 2
