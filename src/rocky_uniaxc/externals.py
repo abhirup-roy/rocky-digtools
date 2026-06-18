@@ -223,7 +223,7 @@ def _vtk_gen(
     print("VTK file written successfully.")
 
 
-@pyrocky_run
+@pyrocky_run()
 def generate_vtk(rocky, rocky_filepath: str, output_dir: str):
     """Generate VTK files for particle data at every saved time step.
 

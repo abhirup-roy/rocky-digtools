@@ -20,7 +20,6 @@ import matplotlib.pyplot as plt
 
 from .. import particles_shapes
 from ..compr_meshgen import create_meshes
-from .. import HEADLESS
 from .helpers import pyrocky_run
 
 __all__ = ["Settings", "UniaxialCompressionSimulation"]
@@ -281,7 +280,7 @@ class Settings:
     @property
     def expected_particle_volume(self) -> float:
         """Expected particle volume, weighting radii for polydisperse distributions."""
-        if isinstance(self.p_radius, float):
+        if isinstance(self.p_radius, (int, float)):
             return (4 / 3) * np.pi * self.p_radius**3
         radii = np.array(list(self.p_radius.keys()))
         probs = np.array(list(self.p_radius.values()))
@@ -297,7 +296,7 @@ class Settings:
         Returns:
             The average particle radius in metres.
         """
-        if isinstance(self.p_radius, float):
+        if isinstance(self.p_radius, (int, float)):
             return self.p_radius
         radii = np.array(list(self.p_radius.keys()))
         probs = np.array(list(self.p_radius.values()))
@@ -384,7 +383,7 @@ class Settings:
         return cls(**data)
 
 
-@pyrocky_run(headless=HEADLESS)
+@pyrocky_run()
 class UniaxialCompressionSimulation:
     """End-to-end uniaxial compression simulation in Ansys Rocky.
 

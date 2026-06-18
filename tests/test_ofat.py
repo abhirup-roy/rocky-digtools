@@ -102,15 +102,17 @@ class TestLaunchOfat:
             "hold_values": ["m"],
         }
         sweep_name = tmp_path / "test_mid_even"
-        with pytest.raises((ValueError, TypeError)):
-            launch_ofat(
+        # Even n_points with hold='m' must select a single scalar midpoint,
+        # not a 2-element slice that caused an ambiguous-truth-value crash.
+        launch_ofat(
             sweep_name=str(sweep_name),
             ofat_values=ofat_values,
             n_points=6,
             json_path=ofat_json,
             autolaunch=False,
-                backend="pyrocky",
-            )
+            backend="pyrocky",
+        )
+        assert any(sweep_name.iterdir())
 
     def test_invalid_params_key(self, tmp_path, ofat_json):
         ofat_values = {

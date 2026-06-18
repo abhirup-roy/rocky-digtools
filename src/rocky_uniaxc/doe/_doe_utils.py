@@ -178,6 +178,7 @@ def render_pyrocky_script(
     case_dir: str | Path,
     script_contxt: dict,
     meshdir: str = "meshes",
+    mesh_path: Optional[str | Path] = None,
 ) -> None:
     """Render a pyrocky uniaxial compression simulation case.
 
@@ -187,10 +188,17 @@ def render_pyrocky_script(
     Args:
         case_dir: Path to the case directory.
         script_contxt: Dictionary containing script template variables.
-        meshdir: Name of the mesh subdirectory.
+        meshdir: Name of the mesh subdirectory (used only when
+            ``mesh_path`` is ``None``).
+        mesh_path: Absolute path to the mesh directory. When provided this
+            takes precedence over ``meshdir``, allowing callers to point
+            cases at a shared pre-generated mesh directory.
     """
     case_dir = Path(case_dir)
-    mesh_path = os.path.abspath(case_dir / meshdir)
+    if mesh_path is None:
+        mesh_path = os.path.abspath(case_dir / meshdir)
+    else:
+        mesh_path = str(os.path.abspath(mesh_path))
 
     settings_dict = {
         "particle_box_len": script_contxt["L_BOX"],
@@ -300,6 +308,7 @@ def prepare_case(
     script_contxt: dict,
     backend: str,
     rocky_template: Optional[jinja2.Template] = None,
+    mesh_path: Optional[str | Path] = None,
 ) -> None:
     """Write a simulation script to the case directory.
 
@@ -309,6 +318,9 @@ def prepare_case(
         backend: Simulation backend — ``"rocky_prepost"`` or ``"pyrocky"``.
         rocky_template: Jinja2 template instance. Required when
             ``backend="rocky_prepost"``.
+        mesh_path: Absolute path to the mesh directory (pyrocky backend
+            only). When provided, the generated ``settings.json`` points
+            at this directory instead of deriving a per-case path.
 
     Raises:
         ValueError: If ``backend="rocky_prepost"`` and no template is
@@ -322,7 +334,7 @@ def prepare_case(
         rendered = rocky_template.render(script_contxt)
         script_path.write_text(rendered)
     elif backend == "pyrocky":
-        render_pyrocky_script(case_dir, script_contxt)
+        render_pyrocky_script(case_dir, script_contxt, mesh_path=mesh_path)
     else:
         raise ValueError(f"Unknown backend: {backend}")
 

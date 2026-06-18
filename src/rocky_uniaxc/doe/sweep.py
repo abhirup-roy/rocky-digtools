@@ -27,7 +27,6 @@ from ._doe_utils import (
 )
 from ..compr_meshgen import create_meshes
 from ..utils import slurm_sbatch
-from .. import BACKEND
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +123,7 @@ def launch_sweep(
         FileNotFoundError: If ``template_dir`` does not exist.
     """
     if backend is None:
+        from .. import BACKEND
         backend = BACKEND
     if backend not in ["rocky_prepost", "pyrocky"]:
         raise ValueError("backend must be 'rocky_prepost' or 'pyrocky'")
@@ -185,7 +185,13 @@ def launch_sweep(
 
         script_contxt = script_context_from_params(params, target_quoted, meshdir)
         script_contxt["SHAPES_MODULE_PATH"] = shapes_module_path
-        prepare_case(case_dir, script_contxt, backend, rocky_template)
+        prepare_case(
+            case_dir,
+            script_contxt,
+            backend,
+            rocky_template,
+            mesh_path=size_to_mesh_dir[params.box_len],
+        )
 
         logger.debug("Case %d prepared: %s", i, params.shape.name)
 

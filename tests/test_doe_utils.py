@@ -1,7 +1,9 @@
 """Unit tests verifying the backend functions that prepare directories and configuration templates."""
 
+import sys
 from pathlib import Path
 import pytest
+from unittest.mock import MagicMock, patch
 
 from rocky_uniaxc.doe._doe_utils import (
     ShapeConfig,
@@ -211,7 +213,6 @@ class TestPrepareCase:
             prepare_case(case_dir, ctx, backend="rocky_prepost")
 
     def test_rocky_prepost_with_template(self, tmp_path, sample_sim_params):
-        from unittest.mock import MagicMock
 
         case_dir = tmp_path / "case_0"
         case_dir.mkdir()
@@ -227,3 +228,38 @@ class TestPrepareCase:
         ctx = script_context_from_params(sample_sim_params, "GPU")
         with pytest.raises(ValueError, match="Unknown backend"):
             prepare_case(case_dir, ctx, backend="invalid")
+
+    def test_case_runner(self, tmp_path, fake_rocky_on_path):
+        case_dir = tmp_path / "case_0"
+        case_dir.mkdir()
+
+        # Use the repo's example DOE JSON
+        example_json_pth = Path(__file__).parent.parent / "json" / "ofat_base.json"
+        settings_path = case_dir / "settings.json"
+        settings_path.write_text(example_json_pth.read_text())
+
+        # Ensure mesh_dir auto-resolution does not trigger mesh generation.
+        # ofat_base.json has box_len = 0.0025
+        (tmp_path / "meshes_0.0025").mkdir(parents=True, exist_ok=True)
+
+        argv = sys.argv.copy()
+        try:
+            sys.argv = ["rocky_uniaxc.case_runner", str(settings_path)]
+            from rocky_uniaxc import case_runner
+
+            with (
+                patch.object(
+                    case_runner.UniaxialCompressionSimulation,
+                    "setup",
+                    return_value=None,
+                ),
+                patch.object(
+                    case_runner.UniaxialCompressionSimulation,
+                    "execute",
+                    return_value=None,
+                ) as mock_execute,
+            ):
+                case_runner.main()
+                mock_execute.assert_called_once()
+        finally:
+            sys.argv = argv

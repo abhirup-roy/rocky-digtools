@@ -1,7 +1,8 @@
 """Centralised fixtures and mock configurations testing rocky_uniaxc functionality."""
 
-import importlib
 import json
+import os
+from pathlib import Path
 import sqlite3
 import sys
 import types
@@ -22,18 +23,6 @@ def pytest_configure(config):
         core_mod = types.ModuleType("ansys.rocky.core")
         core_mod.launch_rocky = lambda *a, **kw: None
         sys.modules["ansys.rocky.core"] = core_mod
-
-    # Resolve circular import issues that occasionally happen when submodules load
-    # BACKEND before the main package finishes initializing. We set up an early stub here.
-    if "rocky_uniaxc" not in sys.modules:
-        pkg = types.ModuleType("rocky_uniaxc")
-        pkg.__path__ = ["src/rocky_uniaxc"]
-        pkg.__package__ = "rocky_uniaxc"
-        pkg.ROCKY_EXE_PATH = None
-        pkg.HEADLESS = True
-        pkg.BACKEND = "pyrocky"
-        sys.modules["rocky_uniaxc"] = pkg
-        importlib.reload(pkg)
 
 
 # General settings and mesh configurations
@@ -234,3 +223,30 @@ def mock_rocky_api():
     rocky.api = MagicMock()
     rocky.close = MagicMock()
     return rocky
+
+
+@pytest.fixture
+def fake_rocky_on_path(tmp_path, monkeypatch) -> Path:
+    """Create a fake `Rocky` executable and put it on PATH.
+
+    Many parts of the codebase locate Rocky via `shutil.which("Rocky")`. This
+    fixture makes that resolution succeed without requiring a real Rocky DEM
+    installation.
+
+    Returns:
+        Path to the fake Rocky executable.
+    """
+
+    bin_dir = tmp_path / "fake_bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+
+    rocky_exe = bin_dir / "Rocky"
+    rocky_exe.write_text("#!/bin/sh\nexit 0\n")
+    rocky_exe.chmod(0o755)
+
+    monkeypatch.setenv(
+        "PATH",
+        f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+    )
+
+    return rocky_exe

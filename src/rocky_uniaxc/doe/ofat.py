@@ -24,7 +24,6 @@ from ._doe_utils import (
 )
 from ..compr_meshgen import create_meshes
 from ..utils import slurm_sbatch
-from .. import BACKEND
 
 logger = logging.getLogger(__name__)
 
@@ -200,10 +199,7 @@ def iter_ofat(json_path: str, ofat_values: dict[str, list | str], n_points: int)
         elif ofat_values["hold_values"][i] == "l":
             hold_i = levels_i[0]
         elif ofat_values["hold_values"][i] == "m":
-            if levels_i.size % 2 == 0:
-                hold_i = levels_i[levels_i.size // 2 - 1 : levels_i.size // 2 + 1]
-            else:
-                hold_i = levels_i[levels_i.size // 2]
+            hold_i = levels_i[(levels_i.size - 1) // 2]
         else:
             raise ValueError(
                 f"Invalid hold value for parameter '{ofat_values['parameters'][i]}':\
@@ -300,6 +296,7 @@ def launch_ofat(
         NotImplementedError: If ``target="MULTI_GPU"`` is requested.
     """
     if not backend:
+        from .. import BACKEND
         backend = BACKEND
     if backend not in ["rocky_prepost", "pyrocky"]:
         raise ValueError("backend must be 'rocky_prepost' or 'pyrocky'")
@@ -405,11 +402,17 @@ def launch_ofat(
         }
 
         if exp_dict["rolling"] != "none":
-            script_contxt["ROLLING_FRICTION"] = exp_dict["rolling"]
+            script_contxt["ROLLING_FRICTION"] = exp_dict["fric_rolling_pp"]
         else:
             script_contxt["ROLLING_FRICTION"] = 0
 
-        prepare_case(case_dir, script_contxt, backend, rocky_template)
+        prepare_case(
+            case_dir,
+            script_contxt,
+            backend,
+            rocky_template,
+            mesh_path=size_to_mesh_dir[exp_dict["box_len"]],
+        )
 
         logger.debug("Case %d prepared", i)
 

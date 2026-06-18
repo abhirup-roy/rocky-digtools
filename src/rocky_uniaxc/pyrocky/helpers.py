@@ -1,9 +1,12 @@
 import shutil
 import pathlib
-import ansys.rocky.core as rocky_api
-from .. import ROCKY_EXE_PATH
 import functools
 import inspect
+
+try:
+    import ansys.rocky.core as rocky_api
+except ImportError:
+    rocky_api = None
 
 
 def find_rocky_exe():
@@ -61,18 +64,28 @@ class pyrocky_run:
         FileNotFoundError: If the Rocky executable cannot be located.
     """
 
-    def __init__(self, headless=True):
+    def __init__(self, headless=None):
         self.headless = headless
+        from .. import ROCKY_EXE_PATH
         self.rocky_exe = find_rocky_exe() or ROCKY_EXE_PATH
         self.rocky = None
 
     def __enter__(self):
+        if rocky_api is None:
+            raise ImportError(
+                "ansys.rocky.core is required to use pyrocky_run. "
+                "Install the Ansys Rocky Python API."
+            )
         if not self.rocky_exe or not pathlib.Path(self.rocky_exe).is_file():
             raise FileNotFoundError(
                 "Rocky executable not found. Please set the path using set_rocky_exe_path()."
             )
+        headless = self.headless
+        if headless is None:
+            from .. import HEADLESS
+            headless = HEADLESS
         self.rocky = rocky_api.launch_rocky(
-            rocky_exe=self.rocky_exe, headless=self.headless
+            rocky_exe=self.rocky_exe, headless=headless
         )
         return self.rocky
 
