@@ -7,16 +7,17 @@ launches the jobs.
 """
 
 import json
-import logging
 import os
+import sys
 from collections import OrderedDict
 import itertools
 from pathlib import Path
 from typing import Optional
 
 import jinja2
+from tqdm import tqdm
 
-from . import _tqdm_launch, shapes_module_path
+from . import shapes_module_path
 from ._doe_utils import (
     SimParams,
     ShapeConfig,
@@ -26,9 +27,7 @@ from ._doe_utils import (
     prepare_case,
 )
 from ..compr_meshgen import create_meshes
-from ..utils import slurm_sbatch
-
-logger = logging.getLogger(__name__)
+from ..utils import RockyScheduler
 
 
 def iter_params(json_path: str) -> list[SimParams]:
@@ -50,7 +49,6 @@ def iter_params(json_path: str) -> list[SimParams]:
         shape_list = [shape_list]
 
     shape_configs = [ShapeConfig.from_dict(s) for s in shape_list]
-    logger.debug("Loaded %d shape configurations", len(shape_configs))
 
     param_combinations = itertools.product(
         params["particle_properties"]["radius"],
@@ -81,14 +79,12 @@ def iter_params(json_path: str) -> list[SimParams]:
 
 def launch_sweep(
     sweep_name: str,
+    scheduler: RockyScheduler,
     json_path: str,
     meshdir: str = "meshes",
     template_dir: Optional[str | os.PathLike] = None,
     autolaunch=True,
-    loc: str = "bb-gpu",
-    custom_sh: Optional[str] = None,
     target: str = "GPU",
-    ncpus: Optional[int] = None,
     backend: Optional[str] = None,
 ):
     """Generate and launch a full-factorial parameter sweep.
@@ -101,32 +97,32 @@ def launch_sweep(
         sweep_name: Title of the sweep, used as the root directory name.
         json_path: Path to the JSON configuration file defining parameter
             ranges.
+        scheduler: :class:`~rocky_uniaxc.schedulers.RockyScheduler` describing
+            the SLURM configuration for each case. Defaults to
+            ``RockyScheduler.bb_gpu()`` when ``None``.
         meshdir: Name of the mesh subdirectory inside each case. Defaults to
             ``"meshes"``.
         template_dir: Optional path to a directory containing custom Jinja2
             templates. Defaults to the package's built-in templates.
         autolaunch: Whether to automatically submit SLURM jobs after setup.
             Defaults to ``True``.
-        loc: Cluster location for SLURM scripts. Accepted values are
-            ``"bb-gpu"``, ``"bb-cpu"``, ``"az-gpu"``, and ``"custom"``.
-        custom_sh: Custom SLURM script content. Only used when
-            ``loc="custom"``.
         target: Compute target — ``"CPU"`` or ``"GPU"``. Defaults to
             ``"GPU"``.
-        ncpus: Number of CPUs to request (CPU target only).
         backend: Simulation backend — ``"rocky_prepost"`` or ``"pyrocky"``.
             Defaults to the package-level :data:`BACKEND` setting.
 
     Raises:
-        ValueError: If an unsupported backend, target, or location is
-            specified.
+        ValueError: If an unsupported backend or target is specified.
         FileNotFoundError: If ``template_dir`` does not exist.
     """
     if backend is None:
         from .. import BACKEND
         backend = BACKEND
+    
     if backend not in ["rocky_prepost", "pyrocky"]:
         raise ValueError("backend must be 'rocky_prepost' or 'pyrocky'")
+    elif backend == "pyrocky":
+        scheduler.run_command = f"{sys.executable} -m rocky_uniaxc.case_runner settings.json"
 
     if template_dir:
         template_dir = Path(template_dir).resolve()
@@ -138,9 +134,6 @@ def launch_sweep(
         raise ValueError("Select from 'CPU', 'GPU', 'MULTI_GPU'")
     elif target == "MULTI_GPU":
         raise NotImplementedError("Multi GPU use not validated yet")
-
-    if (loc == "bb-cpu" and target == "GPU") or (loc == "az-gpu" and target == "CPU"):
-        raise ValueError(f"{target} is not valid for location {loc}")
 
     target_quoted = f'"{target}"'
 
@@ -157,7 +150,6 @@ def launch_sweep(
 
     all_params = list(iter_params(json_path))
     total_cases = len(all_params)
-    logger.info("Setting up %d cases...", total_cases)
 
     sweep_path = Path(sweep_name)
     sweep_path.mkdir(exist_ok=True)
@@ -167,17 +159,20 @@ def launch_sweep(
         case_dirs.append(sweep_path / f"case_{i}")
 
     unique_sizes = get_unique_box_lens(all_params)
-    logger.info("Generating meshes for %d unique sizes...", len(unique_sizes))
 
     size_to_mesh_dir = {}
-    for size in unique_sizes:
+    for size in tqdm(unique_sizes, desc="Generating meshes", unit="mesh"):
         shared_mesh_dir = sweep_path / f"meshes_{size}"
         shared_mesh_dir.mkdir(parents=True, exist_ok=True)
         create_meshes(size, meshsize=0.01, out_dir=str(shared_mesh_dir))
         size_to_mesh_dir[size] = shared_mesh_dir
 
-    logger.info("Generating scripts and preparing jobs...")
-    for i, params in enumerate(all_params):
+    for i, params in tqdm(
+        enumerate(all_params),
+        total=total_cases,
+        desc="Preparing cases",
+        unit="case",
+    ):
         case_dir = case_dirs[i]
 
         with case_directory(sweep_path, i, meshdir):
@@ -193,19 +188,9 @@ def launch_sweep(
             mesh_path=size_to_mesh_dir[params.box_len],
         )
 
-        logger.debug("Case %d prepared: %s", i, params.shape.name)
+        scheduler.generate(case_dir)
 
-        slurm_sbatch(
-            str(case_dir),
-            loc=loc,
-            autolaunch=False,
-            custom_msg=custom_sh,
-            ncpus=ncpus,
-        )
-
-        logger.info("Case %d/%d prepared", i + 1, total_cases)
-
-    logger.info("\nAll cases:\n%s", all_params)
+    tqdm.write(f"\nAll cases:\n{all_params}")
 
     if autolaunch:
-        _tqdm_launch([str(d) for d in case_dirs], total_cases)
+        scheduler.launch_all([str(d) for d in case_dirs])

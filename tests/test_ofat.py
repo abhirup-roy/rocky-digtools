@@ -3,13 +3,14 @@
 import pytest
 from unittest.mock import patch
 from rocky_uniaxc.doe.ofat import launch_ofat
+from rocky_uniaxc import RockyScheduler
 
 
 class TestLaunchOfat:
     @pytest.fixture(autouse=True)
     def mock_deps(self):
         with (
-            patch("rocky_uniaxc.doe.ofat.slurm_sbatch"),
+            patch("rocky_uniaxc.utils.RockyScheduler.generate"),
             patch("rocky_uniaxc.doe.ofat.create_meshes"),
         ):
             yield
@@ -21,7 +22,7 @@ class TestLaunchOfat:
             "hold_values": ["m"],
         }
         sweep_name = tmp_path / "test_basic"
-        launch_ofat(
+        launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
             sweep_name=str(sweep_name),
             ofat_values=ofat_values,
             n_points=5,
@@ -39,7 +40,7 @@ class TestLaunchOfat:
             "hold_values": ["h"],
         }
         sweep_name = tmp_path / "test_high"
-        launch_ofat(
+        launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
             sweep_name=str(sweep_name),
             ofat_values=ofat_values,
             n_points=5,
@@ -60,7 +61,7 @@ class TestLaunchOfat:
             "hold_values": ["l"],
         }
         sweep_name = tmp_path / "test_low"
-        launch_ofat(
+        launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
             sweep_name=str(sweep_name),
             ofat_values=ofat_values,
             n_points=5,
@@ -81,7 +82,7 @@ class TestLaunchOfat:
             "hold_values": ["m"],
         }
         sweep_name = tmp_path / "test_mid"
-        launch_ofat(
+        launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
             sweep_name=str(sweep_name),
             ofat_values=ofat_values,
             n_points=5,
@@ -104,7 +105,7 @@ class TestLaunchOfat:
         sweep_name = tmp_path / "test_mid_even"
         # Even n_points with hold='m' must select a single scalar midpoint,
         # not a 2-element slice that caused an ambiguous-truth-value crash.
-        launch_ofat(
+        launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
             sweep_name=str(sweep_name),
             ofat_values=ofat_values,
             n_points=6,
@@ -122,12 +123,12 @@ class TestLaunchOfat:
         }
         sweep_name = tmp_path / "test_err"
         with pytest.raises(ValueError, match="Invalid OFAT parameters"):
-            launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=ofat_json,
-            autolaunch=False,
+            launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=ofat_json,
+                autolaunch=False,
                 backend="pyrocky",
             )
 
@@ -139,7 +140,7 @@ class TestLaunchOfat:
         }
         sweep_name = tmp_path / "test_out"
         # ofat_json has cor_pp=0.4 which is in [0,1], so this should work
-        launch_ofat(
+        launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
             sweep_name=str(sweep_name),
             ofat_values=ofat_values,
             n_points=5,
@@ -158,12 +159,12 @@ class TestLaunchOfat:
         sweep_name = tmp_path / "test_err"
         # Test values must be increasing properly so we catch this common configuration mistake
         with pytest.raises(ValueError, match="Invalid test range"):
-            launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=ofat_json,
-            autolaunch=False,
+            launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=ofat_json,
+                autolaunch=False,
                 backend="pyrocky",
             )
 
@@ -209,12 +210,12 @@ class TestLaunchOfat:
         }
         sweep_name = tmp_path / "test_err"
         with pytest.raises(ValueError, match="Shape parameters should be a single"):
-            launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=str(path),
-            autolaunch=False,
+            launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=str(path),
+                autolaunch=False,
                 backend="pyrocky",
             )
 
@@ -267,24 +268,24 @@ class TestLaunchOfat:
         sweep_name = tmp_path / "test_err"
         # Passing multiple sizes at once won't work in OFAT mode where single-variates assume static bases
         with pytest.raises(ValueError, match="should not be lists"):
-            launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=str(path),
-            autolaunch=False,
+            launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=str(path),
+                autolaunch=False,
                 backend="pyrocky",
             )
 
     def test_missing_ofat_keys(self, tmp_path, ofat_json):
         sweep_name = tmp_path / "test_err"
         with pytest.raises(ValueError, match="must contain"):
-            launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values={"parameters": ["n_corners"]},
-            n_points=5,
-            json_path=ofat_json,
-            autolaunch=False,
+            launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
+                sweep_name=str(sweep_name),
+                ofat_values={"parameters": ["n_corners"]},
+                n_points=5,
+                json_path=ofat_json,
+                autolaunch=False,
                 backend="pyrocky",
             )
 
@@ -297,12 +298,12 @@ class TestLaunchOfat:
         # A simple zip length check enforces equal parameter count and ranges
         sweep_name = tmp_path / "test_err"
         with pytest.raises((ValueError, IndexError)):
-            launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=ofat_json,
-            autolaunch=False,
+            launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=ofat_json,
+                autolaunch=False,
                 backend="pyrocky",
             )
 
@@ -314,11 +315,11 @@ class TestLaunchOfat:
         }
         sweep_name = tmp_path / "test_err"
         with pytest.raises(ValueError, match="not valid"):
-            launch_ofat(
-            sweep_name=str(sweep_name),
-            ofat_values=ofat_values,
-            n_points=5,
-            json_path=ofat_json,
-            autolaunch=False,
+            launch_ofat(scheduler=RockyScheduler.bb_cpu(), 
+                sweep_name=str(sweep_name),
+                ofat_values=ofat_values,
+                n_points=5,
+                json_path=ofat_json,
+                autolaunch=False,
                 backend="pyrocky",
             )
