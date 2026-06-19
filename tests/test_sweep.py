@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 from unittest.mock import patch
+from rocky_uniaxc import RockyScheduler
 import pytest
 
 from rocky_uniaxc.doe.sweep import launch_sweep
@@ -14,7 +15,7 @@ class TestLaunchSweep:
 
         with patch("rocky_uniaxc.utils.RockyScheduler.generate") as mock_generate:
             with patch("rocky_uniaxc.doe.sweep.create_meshes") as mock_meshes:
-                launch_sweep(
+                launch_sweep(scheduler=RockyScheduler.bb_cpu(), 
                     sweep_name=str(tmp_path / sweep_name),
                     json_path=sweep_json,
                     autolaunch=False,

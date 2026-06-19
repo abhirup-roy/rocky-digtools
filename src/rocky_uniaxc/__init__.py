@@ -19,16 +19,16 @@ __all__ = [
     "pyrocky",
 ]
 
-import pathlib as _pathlib
 
 HEADLESS = True
 BACKEND = "pyrocky"
 ROCKY_EXE_PATH = None
 
+import pathlib as _pathlib
 from .doe.sweep import launch_sweep
 from .doe.ofat import launch_ofat
 # from .doe.sobol import launch_sobol
-
+from .utils import RockyScheduler
 # from .doe import med
 from . import sweep_analysis as analyse
 from . import externals

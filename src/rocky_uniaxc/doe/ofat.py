@@ -5,6 +5,7 @@ directories with simulation scripts and SLURM submission files, and optionally
 launches the jobs.
 """
 
+import sys
 import os
 
 import json
