@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 # Import particle shapes using importlib
 shapes_spec = importlib.util.spec_from_file_location(
     "particles_shapes",
-    {{SHAPES_MODULE_PATH}},
+    "{{SHAPES_MODULE_PATH}}",
 )
 if not shapes_spec:
     raise ImportError("Could not find the particles_shapes.py file.")
