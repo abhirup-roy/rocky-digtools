@@ -11,7 +11,7 @@ description = "Toolkit for multiscale uniaxial compression simulations in Ansys 
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
 dependencies = [
-    "ansys-rocky-core<=0.3",
+    "ansys-rocky-core~=0.3",
     "gmsh>=4.15.1",
     "jinja2>=3.1.6",
     "matplotlib>=3.10.8",
@@ -31,11 +31,10 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Physics",
-    "Topic :: Scientific/Engineering :: Pharmaceuticals",
 ]
 
 [project.urls]
-Repository = "https://github.com/abhiruproy/rocky-uniaxc"
+Repository = "https://github.com/abhirup-roy/rocky-uniaxc"
 
 [tool.ruff]
 per-file-ignores = { "src/templates/*" = ["F821"] }
