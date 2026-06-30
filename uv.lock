@@ -1547,7 +1547,7 @@ wheels = [
 ]
 
 [[package]]
-name = "rocky-uniaxc"
+name = "rocky-digtools"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
