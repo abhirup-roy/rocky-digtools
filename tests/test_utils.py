@@ -1,7 +1,7 @@
 """Validate generic shell macros like directory swapping."""
 
 import os
-from rocky_uniaxc.utils import cd
+from rocky_digtools.utils import cd
 
 
 class TestCd:

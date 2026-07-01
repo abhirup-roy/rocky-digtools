@@ -1,14 +1,14 @@
 """CLI entry point for running a single uniaxial compression case.
 
 Reads a ``settings.json`` file, constructs a
-:class:`~rocky_uniaxc.pyrocky.uniax.UniaxialCompressionSimulation`, and
-executes it.
+:class:`~rocky_digtools.models.uniax.simulation.UniaxialCompressionSimulation`,
+and executes it.
 """
 
 import json
 import sys
 from pathlib import Path
-from rocky_uniaxc.pyrocky.uniax import Settings, UniaxialCompressionSimulation
+from .simulation import Settings, UniaxialCompressionSimulation
 
 
 def main():
@@ -18,10 +18,13 @@ def main():
 
     Example::
 
-        python -m rocky_uniaxc.case_runner path/to/settings.json
+        python -m rocky_digtools.models.uniax.case_runner path/to/settings.json
     """
     if len(sys.argv) < 2:
-        print("Usage: python -m rocky_uniaxc.case_runner path/to/settings.json")
+        print(
+            "Usage: python -m rocky_digtools.models.uniax.case_runner "
+            "path/to/settings.json"
+        )
         sys.exit(1)
 
     settings_path = Path(sys.argv[1]).resolve()

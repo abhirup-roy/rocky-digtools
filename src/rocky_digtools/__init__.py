@@ -1,9 +1,9 @@
-"""Tools for setting up and analysing multiscale uniaxial compression simulations.
+"""Tools for setting up and running multiscale DEM simulations in Ansys Rocky.
 
-This package provides utilities for configuring, launching, and post-processing
-uniaxial compression experiments using Ansys Rocky DEM. It supports full
-parameter sweeps, one-factor-at-a-time (OFAT) designs, and pyrocky-based
-simulation workflows.
+This package provides general case-setup and Rocky API utilities (mesh-free
+job scheduling, particle shape wrappers, VTK/STL export, and pyrocky session
+management) shared across DEM test models. Model-specific workflows (e.g.
+uniaxial compression, shear cell) live under :mod:`rocky_digtools.models`.
 
 Author:
     Abhirup Roy
@@ -12,34 +12,30 @@ Author:
 __version__ = "0.1"
 __author__ = "Abhirup Roy"
 __all__ = [
-    "launch_sweep",
-    "launch_ofat",
-    "analyse",
     "externals",
     "pyrocky",
+    "models",
+    "utils",
+    "RockyScheduler",
 ]
 
 
 HEADLESS = True
-BACKEND = "pyrocky"
 ROCKY_EXE_PATH = None
 
 import pathlib as _pathlib
-from .doe.sweep import launch_sweep
-from .doe.ofat import launch_ofat
-# from .doe.sobol import launch_sobol
+from . import utils
 from .utils import RockyScheduler
-# from .doe import med
-from . import sweep_analysis as analyse
 from . import externals
 from . import pyrocky
+from . import models
 
 # Auto-detect Rocky executable path at import time
 ROCKY_EXE_PATH = pyrocky.find_rocky_exe()
 
 
 def set_rocky_exe_path(path: str) -> None:
-    """Set the path to the Rocky executable for the rocky_uniaxc package.
+    """Set the path to the Rocky executable for the rocky_digtools package.
 
     Allows users to specify the path to the Rocky executable if it is not in a
     standard location or not found automatically. The pyrocky API will use the
@@ -79,27 +75,3 @@ def set_headless_mode(headless: bool) -> None:
     """
     global HEADLESS
     HEADLESS = headless
-
-
-def set_backend(backend: str) -> None:
-    """Set the backend for Rocky simulations.
-
-    Determines how the package interacts with the Rocky executable.
-    All non-simulation utilities use pyrocky regardless of this setting.
-
-    Args:
-        backend: The backend to use. Must be ``"pyrocky"`` or
-            ``"rocky_prepost"``.
-
-    Raises:
-        ValueError: If an unsupported backend is specified.
-
-    Example:
-        >>> set_backend("pyrocky")
-    """
-    if backend not in ["pyrocky", "rocky_prepost"]:
-        raise ValueError(
-            f"Unsupported backend: {backend}. Supported backends are 'pyrocky' and 'rocky_prepost'."
-        )
-    global BACKEND
-    BACKEND = backend
