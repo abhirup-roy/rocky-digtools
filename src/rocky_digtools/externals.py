@@ -233,7 +233,7 @@ def generate_vtk(rocky: Any, rocky_filepath: str, output_dir: str) -> None:
 
     Args:
         rocky: Rocky API session (injected by
-            :class:`~rocky_uniaxc.pyrocky.helpers.pyrocky_run`).
+            :class:`~rocky_digtools.pyrocky.helpers.pyrocky_run`).
         rocky_filepath: Path to the Rocky project file (``.rocky``).
         output_dir: Directory where the VTK files will be saved.
 

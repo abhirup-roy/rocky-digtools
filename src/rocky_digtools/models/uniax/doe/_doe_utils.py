@@ -2,7 +2,8 @@
 
 Provides common dataclasses and helper functions for parameter handling,
 script generation, and case directory management used by both
-:mod:`rocky_uniaxc.doe.sweep` and :mod:`rocky_uniaxc.doe.ofat`.
+:mod:`rocky_digtools.models.uniax.doe.sweep` and
+:mod:`rocky_digtools.models.uniax.doe.ofat`.
 """
 
 from __future__ import annotations
@@ -250,7 +251,10 @@ import subprocess
 from pathlib import Path
 
 # Run the single runner module
-subprocess.run([sys.executable, "-m", "rocky_uniaxc.case_runner", "settings.json"], check=True)
+subprocess.run(
+    [sys.executable, "-m", "rocky_digtools.models.uniax.case_runner", "settings.json"],
+    check=True,
+)
 """
     (case_dir / "script_uniax.py").write_text(script_content)
 

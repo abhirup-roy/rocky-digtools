@@ -24,7 +24,7 @@ from ._doe_utils import (
     prepare_case,
 )
 from ..compr_meshgen import create_meshes
-from ..utils import RockyScheduler
+from ....utils import RockyScheduler
 
 
 def iter_ofat(
@@ -268,7 +268,7 @@ def launch_ofat(
             ``"l"``, or ``"m"`` strategies).
         n_points: Number of test points to generate for each factor.
         json_path: Path to the JSON configuration file with base parameters.
-        scheduler: :class:`~rocky_uniaxc.schedulers.RockyScheduler` describing
+        scheduler: :class:`~rocky_digtools.utils.RockyScheduler` describing
             the SLURM configuration for each case. Defaults to
             ``RockyScheduler.bb_cpu()`` when ``None``.
         autolaunch: If ``True``, automatically submit the SLURM jobs after
@@ -295,7 +295,7 @@ def launch_ofat(
         raise ValueError("backend must be 'rocky_prepost' or 'pyrocky'")
     elif backend == "pyrocky":
         scheduler.run_command = (
-            f"{sys.executable} -m rocky_uniaxc.case_runner settings.json"
+            f"{sys.executable} -m rocky_digtools.models.uniax.case_runner settings.json"
         )
 
     if template_dir:
@@ -315,7 +315,7 @@ def launch_ofat(
     # Load template
     if not template_dir:
         rocky_templ_env = jinja2.Environment(
-            loader=jinja2.PackageLoader("rocky_uniaxc", "templates"),
+            loader=jinja2.PackageLoader("rocky_digtools.models.uniax", "templates"),
         )
     else:
         rocky_templ_env = jinja2.Environment(

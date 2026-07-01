@@ -42,7 +42,7 @@ _DEFAULT_ACCOUNT = "windowcr-astrazeneca-abhi"
 
 
 class RockyScheduler:
-    """Generate and submit SLURM jobs for Rocky uniaxial compression cases.
+    """Generate and submit SLURM jobs for Rocky DEM simulation cases.
 
     Each ``#SBATCH`` directive is held declaratively as an attribute; directives
     left as ``None`` are omitted from the generated script. Arbitrary extra
@@ -94,7 +94,7 @@ class RockyScheduler:
 
     Examples
     --------
-    >>> from rocky_uniaxc.schedulers import RockyScheduler
+    >>> from rocky_digtools.utils import RockyScheduler
     >>> scheduler = RockyScheduler.bb_cpu(ncpus=20, run_days=5)
     >>> scheduler.generate("case_0")          # writes case_0/runRocky.sh
     >>> scheduler.launch_all(["case_0", "case_1"])   # submits both via sbatch

@@ -13,7 +13,7 @@ import sqlite3
 import subprocess
 import matplotlib.pyplot as plt
 import pandas as pd
-from .utils import cd
+from ...utils import cd
 
 PWD = os.getcwd()
 

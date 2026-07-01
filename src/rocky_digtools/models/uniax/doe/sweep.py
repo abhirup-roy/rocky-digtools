@@ -27,7 +27,7 @@ from ._doe_utils import (
     prepare_case,
 )
 from ..compr_meshgen import create_meshes
-from ..utils import RockyScheduler
+from ....utils import RockyScheduler
 
 
 def iter_params(json_path: str) -> list[SimParams]:
@@ -38,7 +38,7 @@ def iter_params(json_path: str) -> list[SimParams]:
             ranges for the sweep.
 
     Returns:
-        List of :class:`~rocky_uniaxc.doe._doe_utils.SimParams` instances,
+        List of :class:`~rocky_digtools.models.uniax.doe._doe_utils.SimParams` instances,
         one per parameter combination.
     """
     with open(json_path, "r") as f_params:
@@ -97,7 +97,7 @@ def launch_sweep(
         sweep_name: Title of the sweep, used as the root directory name.
         json_path: Path to the JSON configuration file defining parameter
             ranges.
-        scheduler: :class:`~rocky_uniaxc.schedulers.RockyScheduler` describing
+        scheduler: :class:`~rocky_digtools.utils.RockyScheduler` describing
             the SLURM configuration for each case. Defaults to
             ``RockyScheduler.bb_gpu()`` when ``None``.
         meshdir: Name of the mesh subdirectory inside each case. Defaults to
@@ -124,7 +124,7 @@ def launch_sweep(
         raise ValueError("backend must be 'rocky_prepost' or 'pyrocky'")
     elif backend == "pyrocky":
         scheduler.run_command = (
-            f"{sys.executable} -m rocky_uniaxc.case_runner settings.json"
+            f"{sys.executable} -m rocky_digtools.models.uniax.case_runner settings.json"
         )
 
     if template_dir:
@@ -143,7 +143,7 @@ def launch_sweep(
     # Load template
     if not template_dir:
         rocky_templ_env = jinja2.Environment(
-            loader=jinja2.PackageLoader("rocky_uniaxc", "templates"),
+            loader=jinja2.PackageLoader("rocky_digtools.models.uniax", "templates"),
         )
     else:
         rocky_templ_env = jinja2.Environment(

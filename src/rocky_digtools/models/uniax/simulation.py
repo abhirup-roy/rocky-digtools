@@ -18,9 +18,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .. import particles_shapes
-from ..compr_meshgen import create_meshes
-from .helpers import pyrocky_run
+from ... import particles_shapes
+from .compr_meshgen import create_meshes
+from ...pyrocky.helpers import pyrocky_run
 
 __all__ = ["Settings", "UniaxialCompressionSimulation"]
 
@@ -401,7 +401,7 @@ class UniaxialCompressionSimulation:
 
     Attributes:
         rocky: The active Rocky API session (injected by
-            :class:`~rocky_uniaxc.pyrocky.helpers.pyrocky_run`).
+            :class:`~rocky_digtools.pyrocky.helpers.pyrocky_run`).
         settings: The simulation parameters.
         insertion: Insertion mode flag.
         filename: Project file name.
