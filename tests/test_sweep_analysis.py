@@ -4,7 +4,7 @@ import os
 from unittest.mock import patch
 import pandas as pd
 import pytest
-import rocky_uniaxc.sweep_analysis as sa
+import rocky_digtools.models.uniax.sweep_analysis as sa
 
 
 class TestLoadData:

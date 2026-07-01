@@ -127,8 +127,8 @@ Define your parameter space in a JSON config file (e.g., `sweep_config.json`):
 Write a script to generate and schedule the simulations:
 
 ```python
-from rocky_uniaxc import launch_sweep
-from rocky_uniaxc.utils import RockyScheduler
+from rocky_digtools.models.uniax import launch_sweep
+from rocky_digtools.utils import RockyScheduler
 
 # 1. Define the cluster scheduler settings (e.g., BlueBear CPU)
 scheduler = RockyScheduler.bb_cpu(ncpus=20, run_days=3)
@@ -149,7 +149,7 @@ launch_sweep(
 Load all simulation results from SQLite databases and export them for downstream analysis:
 
 ```python
-import rocky_uniaxc.sweep_analysis as analyze
+import rocky_digtools.models.uniax.sweep_analysis as analyze
 
 # Load data into a Pandas DataFrame
 df = analyze.load_data("my_first_sweep")
@@ -167,7 +167,7 @@ analyze.dump_results("my_first_sweep", filetype="parquet", minimal=True)
 You can execute a single simulation case using a local `settings.json` file:
 
 ```bash
-python -m rocky_uniaxc.case_runner path/to/settings.json
+python -m rocky_digtools.models.uniax.case_runner path/to/settings.json
 ```
 
 ---

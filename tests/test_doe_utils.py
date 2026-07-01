@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from unittest.mock import MagicMock, patch
 
-from rocky_uniaxc.doe._doe_utils import (
+from rocky_digtools.models.uniax.doe._doe_utils import (
     ShapeConfig,
     SimParams,
     case_directory,
@@ -203,7 +203,7 @@ class TestPrepareCase:
         script_path = case_dir / "script_uniax.py"
         assert script_path.exists()
         content = script_path.read_text()
-        assert "rocky_uniaxc.case_runner" in content
+        assert "rocky_digtools.models.uniax.case_runner" in content
 
     def test_rocky_prepost_no_template(self, tmp_path, sample_sim_params):
         case_dir = tmp_path / "case_0"
@@ -243,8 +243,8 @@ class TestPrepareCase:
 
         argv = sys.argv.copy()
         try:
-            sys.argv = ["rocky_uniaxc.case_runner", str(settings_path)]
-            from rocky_uniaxc import case_runner
+            sys.argv = ["rocky_digtools.models.uniax.case_runner", str(settings_path)]
+            from rocky_digtools.models.uniax import case_runner
 
             with (
                 patch.object(

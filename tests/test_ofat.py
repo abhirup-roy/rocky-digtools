@@ -2,16 +2,16 @@
 
 import pytest
 from unittest.mock import patch
-from rocky_uniaxc.doe.ofat import launch_ofat
-from rocky_uniaxc import RockyScheduler
+from rocky_digtools.models.uniax.doe.ofat import launch_ofat
+from rocky_digtools import RockyScheduler
 
 
 class TestLaunchOfat:
     @pytest.fixture(autouse=True)
     def mock_deps(self):
         with (
-            patch("rocky_uniaxc.utils.RockyScheduler.generate"),
-            patch("rocky_uniaxc.doe.ofat.create_meshes"),
+            patch("rocky_digtools.utils.RockyScheduler.generate"),
+            patch("rocky_digtools.models.uniax.doe.ofat.create_meshes"),
         ):
             yield
 

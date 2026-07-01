@@ -58,4 +58,4 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 
 [tool.setuptools.package-data]
-rocky_uniaxc = ["py.typed"]
+rocky_digtools = ["py.typed"]

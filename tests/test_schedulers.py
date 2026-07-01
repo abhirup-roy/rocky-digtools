@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from rocky_uniaxc.utils import RockyScheduler
+from rocky_digtools.utils import RockyScheduler
 
 
 class TestGenerate:

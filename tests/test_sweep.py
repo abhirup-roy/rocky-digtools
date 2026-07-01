@@ -3,18 +3,18 @@
 import json
 from pathlib import Path
 from unittest.mock import patch
-from rocky_uniaxc import RockyScheduler
+from rocky_digtools import RockyScheduler
 import pytest
 
-from rocky_uniaxc.doe.sweep import launch_sweep
+from rocky_digtools.models.uniax.doe.sweep import launch_sweep
 
 
 class TestLaunchSweep:
     def test_launch_sweep_minimal(self, tmp_path, sweep_json):
         sweep_name = "test_launch"
 
-        with patch("rocky_uniaxc.utils.RockyScheduler.generate") as mock_generate:
-            with patch("rocky_uniaxc.doe.sweep.create_meshes") as mock_meshes:
+        with patch("rocky_digtools.utils.RockyScheduler.generate") as mock_generate:
+            with patch("rocky_digtools.models.uniax.doe.sweep.create_meshes") as mock_meshes:
                 launch_sweep(scheduler=RockyScheduler.bb_cpu(), 
                     sweep_name=str(tmp_path / sweep_name),
                     json_path=sweep_json,
