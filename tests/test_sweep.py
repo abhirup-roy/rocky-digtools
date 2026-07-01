@@ -6,7 +6,7 @@ from unittest.mock import patch
 from rocky_digtools import RockyScheduler
 import pytest
 
-from rocky_digtools.models.uniax.doe.sweep import launch_sweep
+from rocky_digtools.models.uniax.doe import launch_sweep, UNIAX_RUNTIME
 
 
 class TestLaunchSweep:
@@ -14,8 +14,8 @@ class TestLaunchSweep:
         sweep_name = "test_launch"
 
         with patch("rocky_digtools.utils.RockyScheduler.generate") as mock_generate:
-            with patch("rocky_digtools.models.uniax.doe.sweep.create_meshes") as mock_meshes:
-                launch_sweep(scheduler=RockyScheduler.bb_cpu(), 
+            with patch.object(UNIAX_RUNTIME, "create_meshes") as mock_meshes:
+                launch_sweep(scheduler=RockyScheduler.bb_cpu(),
                     sweep_name=str(tmp_path / sweep_name),
                     json_path=sweep_json,
                     autolaunch=False,

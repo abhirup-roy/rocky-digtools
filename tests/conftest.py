@@ -66,7 +66,7 @@ def mock_create_meshes():
 
 @pytest.fixture
 def sample_shape_config():
-    from rocky_digtools.models.uniax.doe._doe_utils import ShapeConfig
+    from rocky_digtools.models.doe import ShapeConfig
 
     return ShapeConfig(
         name="polyhedron", vert_ar=1.5, horiz_ar=1.2, n_corners=20, sq_degree=3.0
@@ -75,7 +75,7 @@ def sample_shape_config():
 
 @pytest.fixture
 def sample_sim_params(sample_shape_config):
-    from rocky_digtools.models.uniax.doe._doe_utils import SimParams
+    from rocky_digtools.models.doe import SimParams
 
     return SimParams(
         radius=0.001,
@@ -90,12 +90,12 @@ def sample_sim_params(sample_shape_config):
         fric_stat_pw=0.3,
         cor_pw=0.9,
         box_len=0.01,
-        p_compress=1000.0,
         normal="linear_hysteresis",
         tangential="coulomb_limit",
         rolling="none",
         adhesion="none",
         shape=sample_shape_config,
+        extra={"p_compress": 1000.0},
     )
 
 

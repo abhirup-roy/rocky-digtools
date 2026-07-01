@@ -18,8 +18,7 @@ __all__ = [
 
 BACKEND = "pyrocky"
 
-from .doe.sweep import launch_sweep
-from .doe.ofat import launch_ofat
+from .doe import launch_sweep, launch_ofat
 from . import sweep_analysis as analyse
 from .simulation import Settings, UniaxialCompressionSimulation
 from .compr_meshgen import create_meshes
