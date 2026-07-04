@@ -15,8 +15,21 @@ shapes_module_path = str(
     (pathlib.Path(__file__).parent.parent.parent / "particles_shapes.py").resolve()
 )
 
-from .schema import ShapeConfig, SimParams, ParamSchema, iter_params, iter_ofat, get_unique_box_lens
-from .runtime import ModelRuntime, case_directory, prepare_case, script_context_from_params, load_template
+from .schema import (
+    ShapeConfig,
+    SimParams,
+    ParamSchema,
+    iter_params,
+    iter_ofat,
+    get_unique_box_lens,
+)
+from .runtime import (
+    ModelRuntime,
+    case_directory,
+    prepare_case,
+    script_context_from_params,
+    load_template,
+)
 from .sweep import launch_sweep
 from .ofat import launch_ofat
 
