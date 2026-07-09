@@ -27,6 +27,19 @@ from .. import PyrockySimulation
 __all__ = ["Settings", "ShearCellSimulation", "run_shear_point", "aggregate_results"]
 
 
+def _phase_times(t_fill: float, t_settle: float, t_compression: float, t_shear: float, insert: bool) -> tuple[float, float, float, float]:
+    """Return cumulative fill, settle, compression, and shear end times."""
+    fill_end = t_fill if insert else 0.0
+    settle_end = fill_end + t_settle
+    compression_end = settle_end + t_compression
+    return fill_end, settle_end, compression_end, compression_end + t_shear
+
+
+def _target_force(sigma: float, area: float, wall_mass: float) -> float:
+    """Additional downward force needed for a target normal stress (N)."""
+    return sigma * area - wall_mass * 9.81
+
+
 @dataclass(slots=True)
 class Settings:
     """Simulation parameters for a shear cell test."""
@@ -522,17 +535,20 @@ class ShearCellSimulation(PyrockySimulation):
         free_body_motion.SetType("Free Body Translation")
         free_body = free_body_motion.GetTypeObject()
         free_body.SetFreeMotionDirection("y")
-        free_body_motion.SetStartTime(p.t_fill + 0.25 if insert else 0.0)
-        free_body_motion.SetStopTime(p.t_settle + p.t_compression + p.t_shear)
+        fill_end, settle_end, compression_end, shear_end = _phase_times(
+            p.t_fill, p.t_settle, p.t_compression, p.t_shear, insert
+        )
+        free_body_motion.SetStartTime(fill_end)
+        free_body_motion.SetStopTime(shear_end)
 
         wall_mass = self._mesh["top_wall"].GetBoundaryMass()
-        force_magnitude = (p.sigma_pre - wall_mass * 9.81) * p.particle_box_len**2
+        force_magnitude = _target_force(p.sigma_pre, p.particle_box_len**2, wall_mass)
         force_motion = top_motions.New()
         force_motion.SetType("Additional Force")
         add_force = force_motion.GetTypeObject()
         add_force.SetForceValue([0, -force_magnitude, 0], "N")
-        force_motion.SetStartTime(p.t_fill + 0.35 if insert else p.t_settle)
-        force_motion.SetStopTime(p.t_settle + p.t_compression + p.t_shear)
+        force_motion.SetStartTime(settle_end)
+        force_motion.SetStopTime(shear_end)
 
         top_frame.ApplyTo(self._ser(self._mesh["top_wall"]))
 
@@ -545,8 +561,8 @@ class ShearCellSimulation(PyrockySimulation):
         translation = shear_motion.GetTypeObject()
         translation.SetInput("fixed_velocity")
         translation.SetVelocity([0, 0, p.shear_vel], "m/s")
-        shear_motion.SetStartTime(p.t_settle + p.t_compression)
-        shear_motion.SetStopTime(p.t_settle + p.t_compression + p.t_shear)
+        shear_motion.SetStartTime(compression_end)
+        shear_motion.SetStopTime(shear_end)
 
         bottom_frame.ApplyTo(self._ser(self._mesh["bottom_wall"]))
 
@@ -601,9 +617,7 @@ class ShearCellSimulation(PyrockySimulation):
         solver = self._study.GetSolver()
         self._select_processor(solver)
 
-        runtime = p.t_settle + p.t_compression + p.t_shear
-        if insert:
-            runtime += p.t_fill
+        runtime = _phase_times(p.t_fill, p.t_settle, p.t_compression, p.t_shear, insert)[-1]
         solver.SetSimulationDuration(runtime, "s")
 
         if not adaptive_ts:
@@ -714,7 +728,9 @@ class ShearCellSimulation(PyrockySimulation):
         release_motion.SetStopTime(t_release)
         sim_time = t_release
 
-        force_magnitude = sigma * p.particle_box_len**2
+        force_magnitude = _target_force(
+            sigma, p.particle_box_len**2, top_wall.GetBoundaryMass()
+        )
         force_motion = top_motions.New()
         force_motion.SetType("Additional Force")
         add_force = force_motion.GetTypeObject()
@@ -875,9 +891,9 @@ class ShearCellSimulation(PyrockySimulation):
                     text=True,
                 )
             except subprocess.CalledProcessError as e:
-                print(f"Error submitting job: {e.stderr}")
+                raise RuntimeError(f"Unable to submit shear array: {e.stderr}") from e
             except FileNotFoundError:
-                print("sbatch not found; script written but not submitted.")
+                raise RuntimeError("sbatch not found; shear array was not submitted.")
 
         return script_path
 
@@ -1019,9 +1035,10 @@ def run_shear_point(case_dir: str, rocky: Any = None) -> float:
     fig.savefig(outputs_dir / f"shear_stress_{sigma / 1000}kpa.png", dpi=300)
     plt.close(fig)
 
-    tau_arr = np.load(outputs_dir / "shear_stresses.npy")
-    tau_arr[sigma_idx] = tau_avg
-    np.save(outputs_dir / "shear_stresses.npy", tau_arr)
+    result_path = case_dir / "result.json"
+    temp_path = result_path.with_suffix(".tmp")
+    temp_path.write_text(json.dumps({"sigma": sigma, "sigma_idx": sigma_idx, "tau": tau_avg}))
+    temp_path.replace(result_path)
 
     return tau_avg
 
@@ -1033,6 +1050,8 @@ def _regression_line(sigma: np.ndarray, tau: np.ndarray):
     """Fit a regression-line yield locus and return Mohr-circle parameters."""
     sigma_locus = sigma[1:]
     tau_locus = tau[1:]
+    if len(sigma_locus) < 2 or len(np.unique(sigma_locus)) != len(sigma_locus):
+        raise ValueError("At least two distinct post-preshear stresses are required.")
     m, c = np.polyfit(sigma_locus, tau_locus, 1, full=False)
 
     if c <= 0:
@@ -1100,6 +1119,8 @@ def _force_fit(sigma: np.ndarray, tau: np.ndarray):
 
     constr = {"type": "eq", "fun": preshear_constr}
     result = optimize.minimize(f_obj, [1.0, 10.0], method="SLSQP", constraints=constr)
+    if not result.success:
+        raise RuntimeError(f"Yield-locus fit failed: {result.message}")
     m_fit, c_fit = result.x
 
     r_unc = c_fit / ((m_fit**2 + 1) ** 0.5 - m_fit)
@@ -1146,8 +1167,19 @@ def aggregate_results(
     outputs_dir = project_dir / "pyoutputs"
     sigma = np.load(outputs_dir / "sigma.npy")
     tau = np.load(outputs_dir / "shear_stresses.npy")
+    for case_dir in project_dir.glob("sigma_*kpa"):
+        result_path = case_dir / "result.json"
+        if not result_path.exists():
+            return None
+        result = json.loads(result_path.read_text())
+        idx = result.get("sigma_idx")
+        if not isinstance(idx, int) or not 0 < idx < len(tau) or result.get("sigma") != sigma[idx]:
+            raise ValueError(f"Invalid shear result provenance: {result_path}")
+        tau[idx] = result.get("tau", np.nan)
 
-    if len(tau) != np.count_nonzero(tau):
+    if len(sigma) < 3 or len(tau) != len(sigma):
+        raise ValueError("At least three matching shear stress points are required.")
+    if not np.isfinite(sigma).all() or not np.isfinite(tau).all():
         return None
 
     if (result := _regression_line(sigma, tau)) is not None:
@@ -1162,9 +1194,15 @@ def aggregate_results(
     m, c, r_unc, centre_conf, radius_conf = result
     sigma_c = centre_conf + radius_conf
     sigma_u = r_unc
+    if sigma_c <= 0 or sigma_u <= 0 or centre_conf == 0:
+        raise ValueError("Nonphysical Mohr-circle radii.")
     ffc = sigma_c / sigma_u
-    phi_i = np.rad2deg(np.arcsin((r_unc - radius_conf) / (r_unc - centre_conf)))
-    phi_eff = np.rad2deg(np.arcsin(radius_conf / centre_conf))
+    phi_i_arg = (r_unc - radius_conf) / (r_unc - centre_conf)
+    phi_eff_arg = radius_conf / centre_conf
+    if not (-1 <= phi_i_arg <= 1 and -1 <= phi_eff_arg <= 1):
+        raise ValueError("Nonphysical Mohr-circle angle.")
+    phi_i = np.rad2deg(np.arcsin(phi_i_arg))
+    phi_eff = np.rad2deg(np.arcsin(phi_eff_arg))
 
     if plot:
         sigma_fit = np.linspace(0, sigma.max(), 100)
@@ -1220,8 +1258,8 @@ def aggregate_results(
             "Fit Method",
         ]
         table_vals = [
-            [sigma_c.round(2)],
             [sigma_u.round(2)],
+            [sigma_c.round(2)],
             [ffc.round(2)],
             [phi_i.round(2)],
             [phi_eff.round(2)],
@@ -1240,8 +1278,8 @@ def aggregate_results(
 
     metrics = {
         "ffc": float(ffc),
-        "sigma_unc": float(sigma_c),
-        "sigma_conf": float(sigma_u),
+        "sigma_unc": float(sigma_u),
+        "sigma_conf": float(sigma_c),
         "phi_i": float(phi_i),
         "phi_eff": float(phi_eff),
         "fit_method": method,
@@ -1256,7 +1294,7 @@ def aggregate_results(
     for k, v in metrics.items():
         df[k] = v
     with sqlite3.connect(str(db_path)) as conn:
-        df.to_sql("parallel_shear", conn, if_exists="append", index=True)
+        df.to_sql("parallel_shear", conn, if_exists="append", index=False)
 
     return metrics
 
