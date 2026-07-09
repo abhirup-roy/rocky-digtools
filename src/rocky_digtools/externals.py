@@ -11,7 +11,7 @@ from typing import Any
 from warnings import warn
 
 import numpy as np
-from evtk import hl, vtk
+from pyevtk import hl, vtk
 from stl import mesh
 
 from .pyrocky import pyrocky_run
@@ -29,6 +29,8 @@ def _get_rotation_matrix(vec: np.ndarray) -> np.ndarray:
         A 3×3 rotation matrix as a :class:`~numpy.ndarray`.
     """
     angle = np.linalg.norm(vec)
+    if np.isclose(angle, 0.0):
+        return np.identity(3)
 
     axis = vec / angle
     K = np.array(

@@ -7,7 +7,9 @@ sweep/OFAT engine in :mod:`rocky_digtools.models.doe`.
 """
 
 import abc as _abc
+import os
 import pathlib as _pathlib
+import subprocess
 from typing import Any
 
 import numpy as _np
