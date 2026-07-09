@@ -16,38 +16,14 @@ import pandas as pd
 from ...utils import cd
 from ..doe import ShapeConfig, SimParams, script_context_from_params
 from ..doe.runtime import render_pyrocky_script
+from ..doe.schema import _split_common_extra, field_paths, get_nested
 from .doe import SHEARCELL_RUNTIME, SHEARCELL_SCHEMA
 from .simulation import aggregate_results
 
 PENALTY_ERROR = 1.0e30
 
-_FIELD_PATHS = {
-    "radius": ("particle_properties", "radius"),
-    "density": ("particle_properties", "density"),
-    "poisson": ("particle_properties", "poisson"),
-    "youngmod": ("particle_properties", "youngmod"),
-    "fric_dyn_pp": ("inseractions", "pp", "fric_dyn"),
-    "fric_stat_pp": ("inseractions", "pp", "fric_stat"),
-    "fric_rolling_pp": ("inseractions", "pp", "fric_rolling"),
-    "cor_pp": ("inseractions", "pp", "cor"),
-    "fric_dyn_pw": ("inseractions", "pw", "fric_dyn"),
-    "fric_stat_pw": ("inseractions", "pw", "fric_stat"),
-    "cor_pw": ("inseractions", "pw", "cor"),
-    "box_len": ("experim_settings", "box_len"),
-    "normal": ("contact_model", "normal"),
-    "tangential": ("contact_model", "tangential"),
-    "rolling": ("contact_model", "rolling"),
-    "adhesion": ("contact_model", "adhesion"),
-    **{
-        field: ("experim_settings", field)
-        for field in SHEARCELL_SCHEMA.extra_experim_fields
-    },
-}
-
-
-def _read_json(path: str | Path) -> dict[str, Any]:
-    with open(path) as f:
-        return json.load(f)
+# Field name -> nested JSON key path, shared with the DOE engine.
+_FIELD_PATHS = field_paths(SHEARCELL_SCHEMA)
 
 
 def _set_nested(data: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
@@ -57,17 +33,9 @@ def _set_nested(data: dict[str, Any], path: tuple[str, ...], value: Any) -> None
     target[path[-1]] = value
 
 
-def _get_nested(data: dict[str, Any], path: tuple[str, ...]) -> Any:
-    target = data
-    for key in path:
-        target = target[key]
-    return target
-
-
 def _reject_lists(config: dict[str, Any]) -> None:
     for field, path in _FIELD_PATHS.items():
-        value = _get_nested(config, path)
-        if isinstance(value, list):
+        if isinstance(get_nested(config, path), list):
             raise ValueError(
                 f"Calibration base config must use scalar values; {field!r} is a list."
             )
@@ -88,30 +56,10 @@ def _with_overrides(
 
 
 def _sim_params_from_config(config: dict[str, Any]) -> SimParams:
-    pp = config["inseractions"]["pp"]
-    pw = config["inseractions"]["pw"]
-    props = config["particle_properties"]
-    exp = config["experim_settings"]
-    contact = config["contact_model"]
+    values = {name: get_nested(config, path) for name, path in _FIELD_PATHS.items()}
+    common, extra = _split_common_extra(SHEARCELL_SCHEMA, values)
     return SimParams(
-        radius=props["radius"],
-        density=props["density"],
-        poisson=props["poisson"],
-        youngmod=props["youngmod"],
-        fric_dyn_pp=pp["fric_dyn"],
-        fric_stat_pp=pp["fric_stat"],
-        fric_rolling_pp=pp["fric_rolling"],
-        cor_pp=pp["cor"],
-        fric_dyn_pw=pw["fric_dyn"],
-        fric_stat_pw=pw["fric_stat"],
-        cor_pw=pw["cor"],
-        box_len=exp["box_len"],
-        normal=contact["normal"],
-        tangential=contact["tangential"],
-        rolling=contact["rolling"],
-        adhesion=contact["adhesion"],
-        shape=ShapeConfig.from_dict(config["shape"]),
-        extra={field: exp[field] for field in SHEARCELL_SCHEMA.extra_experim_fields},
+        **common, shape=ShapeConfig.from_dict(config["shape"]), extra=extra
     )
 
 
@@ -125,7 +73,7 @@ def prepare_candidate_settings(
     candidate_dir = Path(candidate_dir)
     candidate_dir.mkdir(parents=True, exist_ok=True)
 
-    config = _with_overrides(_read_json(base_json), parameter_values)
+    config = _with_overrides(json.loads(Path(base_json).read_text()), parameter_values)
     params = _sim_params_from_config(config)
     ctx = script_context_from_params(
         params,
@@ -143,7 +91,7 @@ def yield_locus_error(
 ) -> float:
     """Return mean squared relative error against a target yield locus CSV."""
     target = pd.read_csv(target_yield_locus)
-    if set(["sigma", "tau"]) - set(target.columns):
+    if {"sigma", "tau"} - set(target.columns):
         raise ValueError("Target yield locus CSV must contain 'sigma' and 'tau' columns.")
 
     target_sigma = target["sigma"].to_numpy(dtype=float)
@@ -320,12 +268,9 @@ def launch_calibration(
         )
     )
 
+    scheduler_args = () if access_scheduler is None else (access_scheduler,)
     with cd(calibration_dir):
-        access = (
-            coexist.Access(script_path.name)
-            if access_scheduler is None
-            else coexist.Access(script_path.name, access_scheduler)
-        )
+        access = coexist.Access(script_path.name, *scheduler_args)
         return access.learn(
             num_solutions=num_solutions,
             target_sigma=target_sigma,

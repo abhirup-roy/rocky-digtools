@@ -39,6 +39,42 @@ _COMMON_HEAD_FIELDS = (
 )
 _COMMON_TAIL_FIELDS = ("normal", "tangential", "rolling", "adhesion")
 
+# Nested JSON key path for each common field in the base configuration.
+_COMMON_FIELD_PATHS: dict[str, tuple[str, ...]] = {
+    "radius": ("particle_properties", "radius"),
+    "density": ("particle_properties", "density"),
+    "poisson": ("particle_properties", "poisson"),
+    "youngmod": ("particle_properties", "youngmod"),
+    "fric_dyn_pp": ("inseractions", "pp", "fric_dyn"),
+    "fric_stat_pp": ("inseractions", "pp", "fric_stat"),
+    "fric_rolling_pp": ("inseractions", "pp", "fric_rolling"),
+    "cor_pp": ("inseractions", "pp", "cor"),
+    "fric_dyn_pw": ("inseractions", "pw", "fric_dyn"),
+    "fric_stat_pw": ("inseractions", "pw", "fric_stat"),
+    "cor_pw": ("inseractions", "pw", "cor"),
+    "box_len": ("experim_settings", "box_len"),
+    "normal": ("contact_model", "normal"),
+    "tangential": ("contact_model", "tangential"),
+    "rolling": ("contact_model", "rolling"),
+    "adhesion": ("contact_model", "adhesion"),
+}
+
+
+def field_paths(schema: ParamSchema) -> dict[str, tuple[str, ...]]:
+    """Map each schema field name to its nested JSON key path."""
+    return {
+        **_COMMON_FIELD_PATHS,
+        **{f: ("experim_settings", f) for f in schema.extra_experim_fields},
+    }
+
+
+def get_nested(data: dict[str, Any], path: tuple[str, ...]) -> Any:
+    """Look up a value in nested dicts by key path."""
+    for key in path:
+        data = data[key]
+    return data
+
+
 COMMON_RANGES: dict[str, tuple[float, Optional[float]]] = {
     "radius": (0, None),
     "density": (0, None),
@@ -198,27 +234,9 @@ def _load_json(json_path: str) -> OrderedDict:
 
 def _field_sources(params: OrderedDict, schema: ParamSchema) -> dict[str, Any]:
     """Map each schema field name to its (possibly list-valued) JSON source."""
-    sources = {
-        "radius": params["particle_properties"]["radius"],
-        "density": params["particle_properties"]["density"],
-        "poisson": params["particle_properties"]["poisson"],
-        "youngmod": params["particle_properties"]["youngmod"],
-        "fric_dyn_pp": params["inseractions"]["pp"]["fric_dyn"],
-        "fric_stat_pp": params["inseractions"]["pp"]["fric_stat"],
-        "fric_rolling_pp": params["inseractions"]["pp"]["fric_rolling"],
-        "cor_pp": params["inseractions"]["pp"]["cor"],
-        "fric_dyn_pw": params["inseractions"]["pw"]["fric_dyn"],
-        "fric_stat_pw": params["inseractions"]["pw"]["fric_stat"],
-        "cor_pw": params["inseractions"]["pw"]["cor"],
-        "box_len": params["experim_settings"]["box_len"],
-        "normal": params["contact_model"]["normal"],
-        "tangential": params["contact_model"]["tangential"],
-        "rolling": params["contact_model"]["rolling"],
-        "adhesion": params["contact_model"]["adhesion"],
+    return {
+        name: get_nested(params, path) for name, path in field_paths(schema).items()
     }
-    for extra_field in schema.extra_experim_fields:
-        sources[extra_field] = params["experim_settings"][extra_field]
-    return sources
 
 
 def _split_common_extra(
@@ -310,35 +328,18 @@ def iter_ofat(
         raise ValueError("Shape parameters should be a single object, not a list.")
 
     ofat_base_valid = {
-        "radius": params["particle_properties"]["radius"],
-        "density": params["particle_properties"]["density"],
-        "poisson": params["particle_properties"]["poisson"],
-        "youngmod": params["particle_properties"]["youngmod"],
-        "fric_dyn_pp": params["inseractions"]["pp"]["fric_dyn"],
-        "fric_stat_pp": params["inseractions"]["pp"]["fric_stat"],
-        "fric_rolling_pp": params["inseractions"]["pp"]["fric_rolling"],
-        "cor_pp": params["inseractions"]["pp"]["cor"],
-        "fric_dyn_pw": params["inseractions"]["pw"]["fric_dyn"],
-        "fric_stat_pw": params["inseractions"]["pw"]["fric_stat"],
-        "cor_pw": params["inseractions"]["pw"]["cor"],
-        "box_len": params["experim_settings"]["box_len"],
-        "normal": params["contact_model"]["normal"],
-        "tangential": params["contact_model"]["tangential"],
-        "rolling": params["contact_model"]["rolling"],
-        "adhesion": params["contact_model"]["adhesion"],
-        "shape": params["shape"]["name"],
-        "vert_ar": params["shape"]["vert_ar"],
-        "horiz_ar": params["shape"]["horiz_ar"],
-        "n_corners": params["shape"]["n_corners"],
-        "sq_degree": params["shape"]["sq_degree"],
-        "particle_path": params["shape"].get("particle_path", ""),
-        "smoothness": params["shape"].get("smoothness", 0.5),
+        name: get_nested(params, path) for name, path in field_paths(schema).items()
     }
-    for extra_field in schema.extra_experim_fields:
-        ofat_base_valid[extra_field] = params["experim_settings"][extra_field]
+    ofat_base_valid.update(
+        shape=params["shape"]["name"],
+        vert_ar=params["shape"]["vert_ar"],
+        horiz_ar=params["shape"]["horiz_ar"],
+        n_corners=params["shape"]["n_corners"],
+        sq_degree=params["shape"]["sq_degree"],
+        particle_path=params["shape"].get("particle_path", ""),
+        smoothness=params["shape"].get("smoothness", 0.5),
+    )
 
-    # Base parameters must be scalars — a list here means a sweep config was
-    # passed to OFAT by mistake.
     for name, value in ofat_base_valid.items():
         if isinstance(value, list):
             raise ValueError(
@@ -382,9 +383,13 @@ def iter_ofat(
         ofat_values["hold_values"],
     ):
         if k not in range_valid:
-            raise ValueError(f"OFAT parameter '{k}' is categorical and cannot be ranged.")
+            raise ValueError(
+                f"OFAT parameter '{k}' is categorical and cannot be ranged."
+            )
         if not isinstance(test_range, (tuple, list)) or len(test_range) != 2:
-            raise ValueError(f"Test range for parameter '{k}' must be a (min, max) pair.")
+            raise ValueError(
+                f"Test range for parameter '{k}' must be a (min, max) pair."
+            )
         lb, ub = range_valid[k]
         ub = ub if ub is not None else float("inf")
 
