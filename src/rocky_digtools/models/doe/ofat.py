@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from ...utils import RockyScheduler
 from . import shapes_module_path
-from .runtime import ModelRuntime, load_template
+from .runtime import ModelRuntime, load_template, prepare_case
 from .schema import ParamSchema, iter_ofat
 
 # Fixed script-context keys for the common parameter set (mirrors
@@ -120,7 +120,7 @@ def launch_ofat(
 
     target_quoted = f'"{target}"'
 
-    rocky_template = load_template(runtime, template_dir)
+    rocky_template = load_template(runtime, template_dir) if backend == "rocky_prepost" else None
 
     experiments_df, base_dict = iter_ofat(
         json_path=str(json_path),
@@ -133,7 +133,7 @@ def launch_ofat(
     vars_list = experiments_df.columns.tolist()
 
     sweep_path = Path(sweep_name)
-    sweep_path.mkdir(exist_ok=True)
+    sweep_path.mkdir(parents=True, exist_ok=True)
 
     case_dirs = []
     for i in range(total_cases):
@@ -163,6 +163,7 @@ def launch_ofat(
         unit="case",
     ):
         case_dir = case_dirs[i]
+        case_dir.mkdir(parents=True, exist_ok=True)
 
         exp_dict = {var: row[var] for var in vars_list}
         exp_dict.update(base_dict)
@@ -183,7 +184,7 @@ def launch_ofat(
                 "PARTICLE_PATH": exp_dict.get("particle_path"),
                 "SMOOTHNESS": exp_dict.get("smoothness", 0.5),
                 "XPU": target_quoted,
-                "MESH_DIR": "meshes",
+                "MESH_DIR": str(size_to_mesh_dir[exp_dict["box_len"]]),
                 "SHAPES_MODULE_PATH": shapes_module_path,
             }
         )

@@ -40,6 +40,10 @@ _COMMON_HEAD_FIELDS = (
 _COMMON_TAIL_FIELDS = ("normal", "tangential", "rolling", "adhesion")
 
 COMMON_RANGES: dict[str, tuple[float, Optional[float]]] = {
+    "radius": (0, None),
+    "density": (0, None),
+    "poisson": (0, 0.5),
+    "youngmod": (0, None),
     "fric_dyn_pp": (0, None),
     "fric_stat_pp": (0, None),
     "fric_rolling_pp": (0, None),
@@ -327,6 +331,8 @@ def iter_ofat(
         "horiz_ar": params["shape"]["horiz_ar"],
         "n_corners": params["shape"]["n_corners"],
         "sq_degree": params["shape"]["sq_degree"],
+        "particle_path": params["shape"].get("particle_path", ""),
+        "smoothness": params["shape"].get("smoothness", 0.5),
     }
     for extra_field in schema.extra_experim_fields:
         ofat_base_valid[extra_field] = params["experim_settings"][extra_field]
@@ -347,6 +353,8 @@ def iter_ofat(
             "OFAT values must contain 'parameters', 'test_range', and 'hold_values' keys."
         )
 
+    if not all(isinstance(ofat_values[key], list) for key in ofat_values):
+        raise ValueError("OFAT parameters, test_range, and hold_values must be lists.")
     if not (
         len(ofat_values["parameters"])
         == len(ofat_values["test_range"])
@@ -354,11 +362,15 @@ def iter_ofat(
     ):
         raise ValueError("Mismatched lengths in OFAT values.")
 
+    if len(set(ofat_values["parameters"])) != len(ofat_values["parameters"]):
+        raise ValueError("OFAT parameters must be unique.")
     if not set(ofat_values["parameters"]).issubset(ofat_base_valid.keys()):
         raise ValueError(
             f"Invalid OFAT parameters. Allowed parameters are: {list(ofat_base_valid.keys())}"
         )
 
+    if not isinstance(n_points, (int, np.integer)) or n_points < 2:
+        raise ValueError("n_points must be an integer of at least 2.")
     range_valid = schema.ranges
 
     # Single pass: validate each factor's baseline and test range, then build
@@ -369,10 +381,14 @@ def iter_ofat(
         ofat_values["test_range"],
         ofat_values["hold_values"],
     ):
+        if k not in range_valid:
+            raise ValueError(f"OFAT parameter '{k}' is categorical and cannot be ranged.")
+        if not isinstance(test_range, (tuple, list)) or len(test_range) != 2:
+            raise ValueError(f"Test range for parameter '{k}' must be a (min, max) pair.")
         lb, ub = range_valid[k]
         ub = ub if ub is not None else float("inf")
 
-        if not (lb <= ofat_base_valid[k] <= ub):
+        if not np.isfinite(ofat_base_valid[k]) or not (lb <= ofat_base_valid[k] <= ub):
             raise ValueError(
                 f"Base parameter '{k}' with value {ofat_base_valid[k]} is out of range ({lb}, {ub})."
             )
@@ -383,7 +399,7 @@ def iter_ofat(
             )
 
         lb_i, ub_i = test_range
-        if lb_i >= ub_i:
+        if not np.isfinite([lb_i, ub_i]).all() or lb_i >= ub_i:
             raise ValueError(
                 f"Invalid test range for parameter '{k}': ({lb_i}, {ub_i})"
             )
@@ -394,6 +410,8 @@ def iter_ofat(
 
         dtype = int if k == "n_corners" else float
         levels_i = np.linspace(lb_i, ub_i, n_points, dtype=dtype)
+        if dtype is int:
+            levels_i = np.unique(levels_i)
         hold_i = {
             "h": levels_i[-1],
             "l": levels_i[0],

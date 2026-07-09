@@ -15,14 +15,15 @@ shapes_module_path = str(
     (pathlib.Path(__file__).parent.parent.parent / "particles_shapes.py").resolve()
 )
 
-from .ofat import launch_ofat
-from .runtime import (
+from .ofat import launch_ofat  # noqa: E402
+from .runtime import (  # noqa: E402
     ModelRuntime,
+    case_directory,
     load_template,
     prepare_case,
     script_context_from_params,
 )
-from .schema import (
+from .schema import (  # noqa: E402
     ParamSchema,
     ShapeConfig,
     SimParams,
@@ -30,7 +31,7 @@ from .schema import (
     iter_ofat,
     iter_params,
 )
-from .sweep import launch_sweep
+from .sweep import launch_sweep  # noqa: E402
 
 __all__ = [
     "shapes_module_path",
@@ -41,6 +42,7 @@ __all__ = [
     "iter_ofat",
     "get_unique_box_lens",
     "ModelRuntime",
+    "case_directory",
     "prepare_case",
     "script_context_from_params",
     "load_template",
