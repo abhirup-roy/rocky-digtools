@@ -6,16 +6,15 @@ utilities provided by the top-level package, and on the shared DOE
 sweep/OFAT engine in :mod:`rocky_digtools.models.doe`.
 """
 
-from typing import Any
 import abc as _abc
 import pathlib as _pathlib
+from typing import Any
+
 import numpy as _np
 
 from .. import particles_shapes as _particles_shapes
-from . import doe
-from . import uniax
-from . import shearcell
 from ..pyrocky.helpers import pyrocky_run as _pyrocky_run
+from . import doe, shearcell, uniax
 
 __all__ = ["doe", "uniax", "shearcell"]
 
@@ -36,11 +35,9 @@ class PyrockySimulation(_abc.ABC):
         filename: str,
         settings: Any,
         study_name: str,
-        insertion: bool = True,
     ) -> None:
 
         self.settings = settings
-        self._insertion = insertion
         self.filename = filename
         self._study_name = study_name
         self.setup()
@@ -167,16 +164,8 @@ class PyrockySimulation(_abc.ABC):
         physics.SetGravityYDirection(-9.81)
         physics.SetGravityZDirection(0)
 
-    def insertion_settings(self, insert: bool = True) -> None:
-        """Configure the particle inlet for the fill phase.
-
-        Args:
-            insert: If ``True``, use surface inlet insertion. If ``False``,
-                use volumetric insertion (not yet implemented).
-
-        Raises:
-            NotImplementedError: If volumetric insertion is requested.
-        """
+    def insertion_settings(self) -> None:
+        """Configure the particle inlet for the fill phase."""
 
         fill_box_vol = self.settings.particle_box_len**3
         particle_vol = self.settings.expected_particle_volume
@@ -185,25 +174,19 @@ class PyrockySimulation(_abc.ABC):
         )  # target 50% fill
         mass_particles = particle_vol * self.settings.p_density * n_particles
 
-        if insert:
-            inlet = self._mesh["insert_inlet"]
-            particle_inlet = self._study.CreateParticleInlet(
-                self._ser(inlet),
-                self._ser(self._particle),
-            )
-            flowr = mass_particles / self.settings.t_fill
+        inlet = self._mesh["insert_inlet"]
+        particle_inlet = self._study.CreateParticleInlet(
+            self._ser(inlet),
+            self._ser(self._particle),
+        )
+        flowr = mass_particles / self.settings.t_fill
 
-            input_property_lst = particle_inlet.GetInputPropertiesList()
-            input_property_lst[0].SetMassFlowRate(flowr, "kg/s")
+        input_property_lst = particle_inlet.GetInputPropertiesList()
+        input_property_lst[0].SetMassFlowRate(flowr, "kg/s")
 
-            particle_inlet.SetStartTime(0.0, "s")
-            particle_inlet.SetStopTime(self.settings.t_fill, "s")
-            particle_inlet.DisablePeriodic()
-        else:
-            raise NotImplementedError(
-                "Volumetric insertion is not yet implemented."
-                "Raise an issue if you would like to see this feature added."
-            )
+        particle_inlet.SetStartTime(0.0, "s")
+        particle_inlet.SetStopTime(self.settings.t_fill, "s")
+        particle_inlet.DisablePeriodic()
 
     def load_material_properties(self):
         """Create particle and wall materials and assign them to the geometry."""
@@ -231,41 +214,7 @@ class PyrockySimulation(_abc.ABC):
     @_abc.abstractmethod
     def set_domain_settings(self):
         """Configure the simulation domain bounds and periodic boundaries."""
-        domain_settings = self._study.GetDomainSettings()
-        domain_settings.DisableUseBoundaryLimits()
-        domain_settings.DisablePeriodicAtGeometryLimits()
-
-        domain_settings.SetDomainType("CARTESIAN")
-        domain_settings.SetCoordinateLimitsMinValues(
-            [
-                (-self.settings.particle_box_len / 2) * 1.5,
-                (-self.settings.particle_box_len / 2) * 1.5,
-                (-self.settings.particle_box_len / 2) * 1.5,
-            ]
-        )
-        domain_settings.SetCoordinateLimitsMaxValues(
-            [
-                (self.settings.particle_box_len / 2) * 1.5,
-                (self.settings.particle_box_len / 2) * 1.5,
-                (self.settings.particle_box_len / 2) * 1.5,
-            ]
-        )
-
-        domain_settings.SetCartesianPeriodicDirections("XZ")
-        domain_settings.SetPeriodicLimitsMinCoordinates(
-            [
-                -self.settings.particle_box_len / 2,
-                -1e-6,
-                -self.settings.particle_box_len / 2,
-            ]
-        )
-        domain_settings.SetPeriodicLimitsMaxCoordinates(
-            [
-                self.settings.particle_box_len / 2,
-                1e-6,
-                self.settings.particle_box_len / 2,
-            ]
-        )
+        pass
 
     def _check_nvidia_gpu(self) -> int:
         """Count available NVIDIA GPUs on the system.
@@ -305,20 +254,14 @@ class PyrockySimulation(_abc.ABC):
     @_abc.abstractmethod
     def load_modules(self):
         """Enable contacts data collection and adhesive contact reporting."""
-        contacts_data = self._study.GetContactData()
-        contacts_data.EnableCollectContactsData()
-        if self.settings.adhesion_model != "none":
-            contacts_data.EnableIncludeAdhesiveContacts()
+        pass
 
-    def simulate(
-        self, sim_time: float, insert: bool = True, adaptive_ts: bool = True
-    ) -> None:
+    def simulate(self, sim_time: float, adaptive_ts: bool = True) -> None:
         """Run the simulation to completion.
 
         Args:
             sim_time: The total simulation time.
-            insert: If ``True``, total duration includes the fill phase.
-                Defaults to ``True``.
+            adaptive_ts: If ``True``, use adaptive time stepping. Defaults to ``True``.
         """
         solver = self._study.GetSolver()
         self._select_processor(solver)

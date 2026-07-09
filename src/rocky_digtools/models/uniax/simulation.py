@@ -6,21 +6,18 @@ workflow of configuring, running, and post-processing a uniaxial compression
 test in Ansys Rocky.
 """
 
-import time
-import os
-import pathlib
-import subprocess
-from typing import Literal, Optional, Any
-from dataclasses import dataclass, asdict, fields, MISSING
 import json
+import pathlib
+from dataclasses import MISSING, asdict, dataclass, fields
+from typing import Any, Literal, Optional
+
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
-import numpy as np
-import matplotlib.pyplot as plt
-
-from ... import particles_shapes
-from .compr_meshgen import create_meshes
 from ...pyrocky.helpers import pyrocky_run
+from .. import PyrockySimulation
+from .compr_meshgen import create_meshes
 
 __all__ = ["Settings", "UniaxialCompressionSimulation"]
 
@@ -64,6 +61,7 @@ class Settings:
         particle_path: Path to an STL file for custom polyhedra.
         smoothness: Surface smoothness parameter.
     """
+
     project_dir: str | pathlib.Path
 
     particle_box_len: float
@@ -384,7 +382,7 @@ class Settings:
 
 
 @pyrocky_run()
-class UniaxialCompressionSimulation:
+class UniaxialCompressionSimulation(PyrockySimulation):
     """End-to-end uniaxial compression simulation in Ansys Rocky.
 
     Wraps the full workflow — project creation, mesh loading, material and
@@ -394,8 +392,6 @@ class UniaxialCompressionSimulation:
 
     Args:
         settings: Simulation parameters as a :class:`Settings` instance.
-        insertion: Whether to use surface insertion (``True``) or volumetric
-            insertion (``False``). Defaults to ``True``.
         filename: Name of the Rocky project file. Defaults to
             ``"uniaxial_compression.rocky"``.
 
@@ -403,7 +399,6 @@ class UniaxialCompressionSimulation:
         rocky: The active Rocky API session (injected by
             :class:`~rocky_digtools.pyrocky.helpers.pyrocky_run`).
         settings: The simulation parameters.
-        insertion: Insertion mode flag.
         filename: Project file name.
     """
 
@@ -412,51 +407,16 @@ class UniaxialCompressionSimulation:
     def __init__(
         self,
         settings: Settings,
-        insertion: bool = True,
         filename: str = "uniaxial_compression.rocky",
     ) -> None:
-        self.settings = settings
-        self.insertion = insertion
-        self.filename = filename
-        self.setup()
-
-        self._particle = None
-        self._mesh = {}
-        self._materials = {}
-
-        self.active_boxes = {}
-        self.active_euls = {}
-
-    @staticmethod
-    def _ser(proxy) -> dict:
-        """Serialise a Rocky API proxy for cross-call argument passing.
-
-        Args:
-            proxy: A Rocky API proxy object.
-
-        Returns:
-            Serialised representation suitable for passing to another API call.
-        """
-        """Serialise a Rocky API proxy for passing as an argument to another API call."""
-        return proxy.serialize(proxy)
-
-    def setup(self):
-        """Create and save a new Rocky project and study."""
-
-        self._project = self.rocky.api.CreateProject()
-        self._project.SaveProject(
-            str(pathlib.Path(self.settings.project_dir) / self.filename)
+        super().__init__(
+            filename,
+            settings,
+            "Uniaxial Compression",
         )
-        self._study = self._project.GetStudy()
-        self._study.SetName("Uniaxial Compression")
 
-    def load_meshes(self, insert: bool = True) -> None:
-        """Import the top wall, bottom wall, and optionally the insert surface.
-
-        Args:
-            insert: If ``True``, also import the insert inlet surface.
-                Defaults to ``True``.
-        """
+    def load_meshes(self) -> None:
+        """Import the top wall, bottom wall, and optionally the insert surface."""
         assert self.settings.mesh_dir is not None
         mesh_dir = pathlib.Path(self.settings.mesh_dir).resolve()
 
@@ -478,167 +438,22 @@ class UniaxialCompressionSimulation:
         self._mesh["top_wall"] = top_wall
         self._mesh["bottom_wall"] = bottom_wall
 
-        if insert:
-            insert_stl_path = (mesh_dir / "insert.stl").resolve()
-            insert_inlet = self._study.ImportSurface(
-                str(insert_stl_path), import_scale=1.0, convert_yz=True
-            )[0]
-            insert_inlet.SetName("Insert Inlet")  # <-- set explicit name
-            insert_inlet.SetPivotPoint([0, 0, 0])
+        insert_stl_path = (mesh_dir / "insert.stl").resolve()
+        insert_inlet = self._study.ImportSurface(
+            str(insert_stl_path), import_scale=1.0, convert_yz=True
+        )[0]
+        insert_inlet.SetName("Insert Inlet")  # <-- set explicit name
+        insert_inlet.SetPivotPoint([0, 0, 0])
 
-            current_height = insert_inlet.GetVertices().mean(axis=0)[1]
-            target_height = (self.settings.particle_box_len / 2) * 0.99
+        current_height = insert_inlet.GetVertices().mean(axis=0)[1]
+        target_height = (self.settings.particle_box_len / 2) * 0.99
 
-            insert_inlet.SetTranslation([0, float(target_height - current_height), 0])
-            insert_inlet.SetInvertNormal(True)
-            self._mesh["insert_inlet"] = insert_inlet
+        insert_inlet.SetTranslation([0, float(target_height - current_height), 0])
+        insert_inlet.SetInvertNormal(True)
+        self._mesh["insert_inlet"] = insert_inlet
 
-    def load_material_properties(self):
-        """Create particle and wall materials and assign them to the geometry."""
-        material_collection = self._study.GetMaterialCollection()
-
-        particle_mat = material_collection.AddSolidMaterial()
-        particle_mat.SetName("Particle Material")
-        particle_mat.SetDensity(self.settings.p_density)
-        particle_mat.SetYoungsModulus(self.settings.p_youngmod)
-        particle_mat.SetPoissonRatio(self.settings.p_poisson)
-        particle_mat.SetUseBulkDensity(False)
-
-        wall_mat = material_collection.AddSolidMaterial()
-        wall_mat.SetName("Wall Material")
-        wall_mat.SetDensity(2700)
-        wall_mat.SetYoungsModulus(1e9)
-        wall_mat.SetPoissonRatio(0.3)
-        wall_mat.SetUseBulkDensity(False)
-
-        self._mesh["top_wall"].SetMaterial(self._ser(wall_mat))
-        self._mesh["bottom_wall"].SetMaterial(self._ser(wall_mat))
-        self._materials["particle_mat"] = particle_mat
-        self._materials["wall_mat"] = wall_mat
-
-    def load_interactions(self):
-        """Configure particle–particle and particle–wall interaction parameters."""
-        pm = self._materials["particle_mat"]
-        wm = self._materials["wall_mat"]
-
-        interaction_collection = self._study.GetMaterialsInteractionCollection()
-        pp_interaction = interaction_collection.GetMaterialsInteraction(
-            self._ser(pm), self._ser(pm)
-        )
-        pw_interaction = interaction_collection.GetMaterialsInteraction(
-            self._ser(pm), self._ser(wm)
-        )
-
-        pp_interaction.SetRestitutionCoefficient(self.settings.cor_pp)
-        pp_interaction.SetDynamicFriction(self.settings.fric_dyn_pp)
-        pp_interaction.SetStaticFriction(self.settings.fric_stat_pp)
-
-        pw_interaction.SetRestitutionCoefficient(self.settings.cor_pw)
-        pw_interaction.SetDynamicFriction(self.settings.fric_dyn_pw)
-        pw_interaction.SetStaticFriction(self.settings.fric_stat_pw)
-
-    def gen_particle(self):
-        """Create a particle in the study and configure its shape and size.
-
-        Raises:
-            ValueError: If the shape type is unsupported or required files
-                are missing.
-        """
-        self._particle = self._study.CreateParticle()
-        self._particle.SetName("Particle")
-
-        match self.settings.shape_name:
-            case "sphere":
-                shape = particles_shapes.Sphere(radius=self.settings.p_radius)
-            case "polyhedron":
-                shape = particles_shapes.Polyhedron(
-                    radius=self.settings.p_radius,
-                    vert_ar=self.settings.vert_ar,
-                    horiz_ar=self.settings.horiz_ar,
-                    n_corners=self.settings.n_corners,
-                    superquadric_degree=self.settings.sq_degree,
-                )
-            case "sphero_cylinder":
-                shape = particles_shapes.SpheroCylinder(
-                    radius=self.settings.p_radius, vert_ar=self.settings.vert_ar
-                )
-            case "custom_polyhedron":
-                if (
-                    not self.settings.particle_path
-                    or not pathlib.Path(self.settings.particle_path).is_file()
-                ):
-                    raise ValueError(
-                        "Particle path must be provided for custom polyhedron shape."
-                    )
-                shape = particles_shapes.CustomPolyhedron(
-                    stl_path=self.settings.particle_path, radius=self.settings.p_radius
-                )
-            case _:
-                raise ValueError(
-                    f"Unsupported shape type: {self.settings.shape_name}. "
-                    "Supported shapes are: 'sphere', 'polyhedron', 'sphero_cylinder', and 'custom_polyhedron'."
-                )
-        pm = self._materials["particle_mat"]
-        shape.particle2rocky(
-            particle=self._particle,
-            material=self._ser(pm),
-            rolling_friction=self.settings.rolling_fric,
-        )
-
-    def sim_physics(self):
-        """Set the contact force models and gravity direction."""
-        physics = self._study.GetPhysics()
-        physics.SetNormalForceModel(self.settings.normal_force_model)
-        physics.SetTangentialForceModel(self.settings.tangential_force_model)
-        physics.SetAdhesionModel(self.settings.adhesion_model)
-
-        physics.SetGravityXDirection(0)
-        physics.SetGravityYDirection(-9.81)
-        physics.SetGravityZDirection(0)
-
-    def insertion_settings(self, insert: bool = True) -> None:
-        """Configure the particle inlet for the fill phase.
-
-        Args:
-            insert: If ``True``, use surface inlet insertion. If ``False``,
-                use volumetric insertion (not yet implemented).
-
-        Raises:
-            NotImplementedError: If volumetric insertion is requested.
-        """
-
-        fill_box_vol = self.settings.particle_box_len**3
-        particle_vol = self.settings.expected_particle_volume
-        n_particles = int(np.rint(fill_box_vol / particle_vol * 0.5))  # target 50% fill
-        mass_particles = particle_vol * self.settings.p_density * n_particles
-
-        if insert:
-            inlet = self._mesh["insert_inlet"]
-            particle_inlet = self._study.CreateParticleInlet(
-                self._ser(inlet),
-                self._ser(self._particle),
-            )
-            flowr = mass_particles / self.settings.t_fill
-
-            input_property_lst = particle_inlet.GetInputPropertiesList()
-            input_property_lst[0].SetMassFlowRate(flowr, "kg/s")
-
-            particle_inlet.SetStartTime(0.0, "s")
-            particle_inlet.SetStopTime(self.settings.t_fill, "s")
-            particle_inlet.DisablePeriodic()
-        else:
-            raise NotImplementedError(
-                "Volumetric insertion is not yet implemented."
-                "Raise an issue if you would like to see this feature added."
-            )
-
-    def move_top_wall(self, insert: bool = True) -> None:
-        """Apply a motion frame to the top wall for settling and compression.
-
-        Args:
-            insert: If ``True``, timing accounts for the fill phase.
-                Defaults to ``True``.
-        """
+    def move_top_wall(self) -> None:
+        """Apply a motion frame to the top wall for settling and compression."""
         frame_source = self._study.GetMotionFrameSource()
         top_wall_frame = frame_source.NewFrame()
 
@@ -649,11 +464,7 @@ class UniaxialCompressionSimulation:
         drop_wall_motion.SetType("Free Body Translation")
         free_body = drop_wall_motion.GetTypeObject()
         free_body.SetFreeMotionDirection("y")
-        drop_wall_motion.SetStartTime(
-            self.settings.t_fill + self.settings.t_settle
-            if insert
-            else self.settings.t_settle
-        )
+        drop_wall_motion.SetStartTime(self.settings.t_fill + self.settings.t_settle)
 
         f_compr = (
             1e-6 * 9.81 - self.settings.p_compress * self.settings.particle_box_len**2
@@ -663,10 +474,7 @@ class UniaxialCompressionSimulation:
         add_force = compr_motion.GetTypeObject()
         add_force.SetForceValue([0, f_compr, 0])
 
-        if insert:
-            start_time = self.settings.t_fill + self.settings.t_settle + 0.1
-        else:
-            start_time = self.settings.t_settle + 0.1
+        start_time = self.settings.t_fill + self.settings.t_settle + 0.1
         end_time = start_time + self.settings.t_compress
         compr_motion.SetStartTime(start_time)
         compr_motion.SetStopTime(end_time)
@@ -711,78 +519,12 @@ class UniaxialCompressionSimulation:
             ]
         )
 
-    def _check_nvidia_gpu(self) -> int:
-        """Count available NVIDIA GPUs on the system.
-
-        Returns:
-            Number of NVIDIA GPUs detected, or 0 on failure.
-        """
-        try:
-            output = subprocess.check_output(["nvidia-smi", "-L"], encoding="utf-8")
-            return sum(1 for line in output.strip().splitlines() if line)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return 0
-
-    def _select_processor(self, solver):
-        """Select the simulation processor (CPU/GPU) on the solver.
-
-        Falls back to CPU if the requested GPU is unavailable.
-
-        Args:
-            solver: The Rocky solver object.
-        """
-        if self.settings.processor == "GPU":
-            if not (n_gpus := self._check_nvidia_gpu()):
-                print("Warning: No NVIDIA GPU detected. Falling back to CPU.")
-                solver.SetSimulationTarget("CPU")
-            else:
-                if n_gpus >= 1:
-                    solver.SetSimulationTarget("GPU")
-                # TODO: Add support for multi-GPU setups
-
-        elif self.settings.processor == "CPU":
-            solver.SetSimulationTarget("CPU")
-
-            cpus = int(os.environ.get("SLURM_CPUS_ON_NODE", os.cpu_count() or 1))
-            solver.SetNumberOfProcessors(cpus)
-
     def load_modules(self):
         """Enable contacts data collection and adhesive contact reporting."""
         contacts_data = self._study.GetContactData()
         contacts_data.EnableCollectContactsData()
         if self.settings.adhesion_model != "none":
             contacts_data.EnableIncludeAdhesiveContacts()
-
-    def simulate(self, insert: bool = True) -> None:
-        """Run the simulation to completion.
-
-        Args:
-            insert: If ``True``, total duration includes the fill phase.
-                Defaults to ``True``.
-        """
-        solver = self._study.GetSolver()
-        self._select_processor(solver)
-
-        p = self.settings
-        phases = (
-            [p.t_fill, p.t_settle, p.t_compress]
-            if insert
-            else [p.t_settle, p.t_compress]
-        )
-        solver.SetSimulationDuration(sum(phases), "s")
-
-        self._project.SaveProject()
-
-        print(f"Starting simulation with {solver.GetSimulationTarget()} solver...")
-        self._study.StartSimulation(non_blocking=True)
-
-        while self._study.IsSimulating():
-            self._study.RefreshResults()
-            print(f"Simulation Progress: {self._study.GetProgress():.2f} %")
-
-            time.sleep(2)
-
-        print("Simulation completed.")
 
     def _get_cropped_region(self, particles, time_step, sample_frac=0.9):
         """Get or create a cropped cuboid region for sampling.
@@ -864,15 +606,15 @@ class UniaxialCompressionSimulation:
         cube_selection = self._get_cropped_region(particles, time_step, sample_frac)
         contact_data = self._study.GetContactData()
 
-        all_contacts_x = contact_data.GetGridFunction("Contact : Coordinate : X").GetArray(
-            time_step=time_step
-        )
-        all_contacts_y = contact_data.GetGridFunction("Contact : Coordinate : Y").GetArray(
-            time_step=time_step
-        )
-        all_contacts_z = contact_data.GetGridFunction("Contact : Coordinate : Z").GetArray(
-            time_step=time_step
-        )
+        all_contacts_x = contact_data.GetGridFunction(
+            "Contact : Coordinate : X"
+        ).GetArray(time_step=time_step)
+        all_contacts_y = contact_data.GetGridFunction(
+            "Contact : Coordinate : Y"
+        ).GetArray(time_step=time_step)
+        all_contacts_z = contact_data.GetGridFunction(
+            "Contact : Coordinate : Z"
+        ).GetArray(time_step=time_step)
 
         x_rng, y_rng, z_rng = cube_selection.GetSize()
         x_center, y_center, z_center = cube_selection.GetCenter()
@@ -901,7 +643,13 @@ class UniaxialCompressionSimulation:
         sample_frac: float = 0.9,
         plot: bool = True,
         return_computed_metrics: bool = False,
-    ) -> tuple[Optional[float], Optional[float], Optional[float], Optional[float], Optional[float]]:
+    ) -> tuple[
+        Optional[float],
+        Optional[float],
+        Optional[float],
+        Optional[float],
+        Optional[float],
+    ]:
         """Post-process simulation results.
 
         Computes uncompressed and compressed bulk densities, contact numbers,
@@ -1017,7 +765,15 @@ class UniaxialCompressionSimulation:
         sample_frac: float = 0.9,
         plot: bool = True,
         return_computed_metrics: bool = False,
-    ) -> Optional[tuple[Optional[float], Optional[float], Optional[float], Optional[float], Optional[float]]]:
+    ) -> Optional[
+        tuple[
+            Optional[float],
+            Optional[float],
+            Optional[float],
+            Optional[float],
+            Optional[float],
+        ]
+    ]:
         """Run the full simulation workflow from setup to post-processing.
 
         Sequentially calls :meth:`load_meshes`, :meth:`load_material_properties`,
@@ -1036,16 +792,25 @@ class UniaxialCompressionSimulation:
             The post-processing result tuple, or ``None`` if no metrics are
             computed.
         """
-        self.load_meshes(insert=self.insertion)
+        self.load_meshes()
         self.load_material_properties()
         self.load_interactions()
         self.gen_particle()
         self.sim_physics()
-        self.insertion_settings(insert=self.insertion)
-        self.move_top_wall(insert=self.insertion)
+        self.insertion_settings()
+        self.move_top_wall()
         self.set_domain_settings()
         self.load_modules()
-        self.simulate(insert=self.insertion)
+
+        self.simulate(
+            sim_time=sum(
+                [
+                    self.settings.t_fill,
+                    self.settings.t_settle,
+                    self.settings.t_compress,
+                ]
+            ),
+        )
         res = self.post_process(
             sample_frac=sample_frac,
             plot=plot,
