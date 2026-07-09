@@ -1,6 +1,6 @@
 import os
 import pathlib
-import sys
+
 import gmsh
 import numpy as np
 from stl.mesh import Mesh
@@ -322,7 +322,7 @@ def create_meshes(
     size: float,
     meshsize: float = 0.001,
     out_dir: str | pathlib.Path = "meshes",
-) -> None:
+) -> ParallelPlateMesh:
     """Create the parallel-plate shear-cell meshes and save them to disk.
 
     Generates ``topwall.stl``, ``bottomwall.stl``, and ``insert.stl`` in the
@@ -336,12 +336,14 @@ def create_meshes(
     out_dir = pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    ParallelPlateMesh(
+    ppm = ParallelPlateMesh(
         box_width=size,
         mesh_size=meshsize,
         save_dir=str(out_dir.resolve()),
         run=True,
     )
+
+    return ppm
 
 
 def get_mesh_metrics(mesh_filepath: str) -> dict:
@@ -372,53 +374,3 @@ def get_mesh_metrics(mesh_filepath: str) -> dict:
     }
 
     return mesh_metrics
-
-
-def create_meshes(
-    size: float,
-    meshsize: float = 0.001,
-    out_dir: str | pathlib.Path = "meshes",
-    l_vanes_frac: float = 0.2,
-    h_vane_frac: float = 0.1,
-    plate_length: float = 1.0,
-    bottom_vanes: bool = True,
-    top_mvt: bool = False,
-    best_mesh_length: bool = True,
-    vane_thickness: float = 1e-5,
-) -> ParallelPlateMesh:
-    """Create the parallel-plate shear-cell meshes and save them to disk.
-
-    Generates ``topwall.stl``, ``bottomwall.stl``, and ``insert.stl`` in the
-    output directory via :class:`ParallelPlateMesh`.
-
-    Args:
-        size: Box width of the shear-cell domain (m).
-        meshsize: Desired mesh resolution. Defaults to 0.001.
-        out_dir: Directory to save the meshes. Defaults to ``"meshes"``.
-        l_vanes_frac: Vane length as a fraction of box width. Defaults to 0.2.
-        h_vane_frac: Vane height as a fraction of box width. Defaults to 0.1.
-        plate_length: Plate length (m). Defaults to 1.0.
-        bottom_vanes: Whether to generate bottom vanes. Defaults to True.
-        top_mvt: Whether the top wall is moving. Defaults to False.
-        best_mesh_length: Auto-compute plate length for shear duration.
-            Defaults to True.
-        vane_thickness: Vane thickness (m). Defaults to 1e-5.
-    """
-    out_dir = pathlib.Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    ppm = ParallelPlateMesh(
-        box_width=size,
-        mesh_size=meshsize,
-        save_dir=str(out_dir.resolve()),
-        run=True,
-        l_vanes_frac=l_vanes_frac,
-        h_vane_frac=h_vane_frac,
-        plate_length=plate_length,
-        bottom_vanes=bottom_vanes,
-        top_mvt=top_mvt,
-        best_mesh_length=best_mesh_length,
-        vane_thickness=vane_thickness,
-    )
-
-    return ppm
