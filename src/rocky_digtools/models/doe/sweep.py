@@ -15,10 +15,15 @@ from typing import Optional
 
 from tqdm import tqdm
 
-from . import shapes_module_path
-from .runtime import ModelRuntime, case_directory, prepare_case, script_context_from_params, load_template
-from .schema import ParamSchema, get_unique_box_lens, iter_params
 from ...utils import RockyScheduler
+from . import shapes_module_path
+from .runtime import (
+    ModelRuntime,
+    load_template,
+    prepare_case,
+    script_context_from_params,
+)
+from .schema import ParamSchema, get_unique_box_lens, iter_params
 
 
 def launch_sweep(
@@ -105,9 +110,6 @@ def launch_sweep(
         unit="case",
     ):
         case_dir = case_dirs[i]
-
-        with case_directory(sweep_path, i, meshdir):
-            pass
 
         script_contxt = script_context_from_params(
             params, target_quoted, meshdir, extra_key_map=runtime.extra_key_map

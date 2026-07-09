@@ -14,10 +14,10 @@ from typing import Optional
 
 from tqdm import tqdm
 
-from . import shapes_module_path
-from .runtime import ModelRuntime, case_directory, prepare_case, load_template
-from .schema import ParamSchema, iter_ofat
 from ...utils import RockyScheduler
+from . import shapes_module_path
+from .runtime import ModelRuntime, load_template
+from .schema import ParamSchema, iter_ofat
 
 # Fixed script-context keys for the common parameter set (mirrors
 # script_context_from_params, but built from a flat OFAT experiment dict
@@ -123,7 +123,10 @@ def launch_ofat(
     rocky_template = load_template(runtime, template_dir)
 
     experiments_df, base_dict = iter_ofat(
-        json_path=str(json_path), ofat_values=ofat_values, n_points=n_points, schema=schema
+        json_path=str(json_path),
+        ofat_values=ofat_values,
+        n_points=n_points,
+        schema=schema,
     )
 
     total_cases = len(experiments_df)
@@ -160,9 +163,6 @@ def launch_ofat(
         unit="case",
     ):
         case_dir = case_dirs[i]
-
-        with case_directory(sweep_path, i, "meshes"):
-            pass
 
         exp_dict = {var: row[var] for var in vars_list}
         exp_dict.update(base_dict)
