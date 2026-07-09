@@ -5,13 +5,15 @@ converting them to VTK unstructured grids with per-cell data (orientation,
 velocity, etc.), and generating VTK files for visualisation in ParaView.
 """
 
-from typing import Optional, Any
 import os
 import tempfile
+from typing import Any
 from warnings import warn
+
 import numpy as np
+from pyevtk import hl, vtk
 from stl import mesh
-from evtk import vtk, hl
+
 from .pyrocky import pyrocky_run
 
 
@@ -27,6 +29,8 @@ def _get_rotation_matrix(vec: np.ndarray) -> np.ndarray:
         A 3×3 rotation matrix as a :class:`~numpy.ndarray`.
     """
     angle = np.linalg.norm(vec)
+    if np.isclose(angle, 0.0):
+        return np.identity(3)
 
     axis = vec / angle
     K = np.array(
@@ -90,7 +94,6 @@ def _vtk_gen(
     orientations: np.ndarray,
     trans_vel_data: np.ndarray,
     rotat_vel_data: np.ndarray,
-    residence_times: np.ndarray,
     output_vtk_path: str,
 ):
     """Convert STL particle data and per-particle attributes to VTK format.
@@ -105,7 +108,6 @@ def _vtk_gen(
         orientations: ``(N, 3)`` array of rotation vectors.
         trans_vel_data: ``(N, 3)`` array of translational velocities.
         rotat_vel_data: ``(N, 3)`` array of rotational velocities.
-        residence_times: ``(N,)`` array of residence times.
         output_vtk_path: Output path for the VTK file (without extension).
     """
     template_verts, template_faces = _load_particle_stl(stl_path)
@@ -310,9 +312,6 @@ def generate_vtk(rocky: Any, rocky_filepath: str, output_dir: str) -> None:
                 ),
             ]
         ).transpose()
-        residence_times = particles.GetGridFunction("Residence Time").GetArray(
-            time_step=idx
-        )
         output_vtk_path = os.path.join(
             output_dir,
             f"particles_t{t:.2f}",
@@ -324,7 +323,6 @@ def generate_vtk(rocky: Any, rocky_filepath: str, output_dir: str) -> None:
             orientations=orients,
             trans_vel_data=trans_vels,
             rotat_vel_data=rotat_vels,
-            residence_times=residence_times,
             output_vtk_path=output_vtk_path,
         )
     project.CloseProject(check_save_state=False)

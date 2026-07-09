@@ -277,9 +277,12 @@ def load_template(runtime: ModelRuntime, template_dir: Optional[str | os.PathLik
         template_dir = Path(template_dir).resolve()
         if not template_dir.exists():
             raise FileNotFoundError(f"Directory {template_dir} does not exist.")
-        env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(template_dir)))
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(template_dir)), undefined=jinja2.StrictUndefined
+        )
     else:
         env = jinja2.Environment(
             loader=jinja2.PackageLoader(runtime.template_package, "templates"),
+            undefined=jinja2.StrictUndefined,
         )
     return env.get_template(runtime.template_name)

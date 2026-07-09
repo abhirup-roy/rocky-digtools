@@ -15,10 +15,15 @@ from typing import Optional
 
 from tqdm import tqdm
 
-from . import shapes_module_path
-from .runtime import ModelRuntime, case_directory, prepare_case, script_context_from_params, load_template
-from .schema import ParamSchema, get_unique_box_lens, iter_params
 from ...utils import RockyScheduler
+from . import shapes_module_path
+from .runtime import (
+    ModelRuntime,
+    load_template,
+    prepare_case,
+    script_context_from_params,
+)
+from .schema import ParamSchema, get_unique_box_lens, iter_params
 
 
 def launch_sweep(
@@ -77,13 +82,13 @@ def launch_sweep(
 
     target_quoted = f'"{target}"'
 
-    rocky_template = load_template(runtime, template_dir)
+    rocky_template = load_template(runtime, template_dir) if backend == "rocky_prepost" else None
 
     all_params = list(iter_params(json_path, schema))
     total_cases = len(all_params)
 
     sweep_path = Path(sweep_name)
-    sweep_path.mkdir(exist_ok=True)
+    sweep_path.mkdir(parents=True, exist_ok=True)
 
     case_dirs = []
     for i in range(total_cases):
@@ -105,9 +110,7 @@ def launch_sweep(
         unit="case",
     ):
         case_dir = case_dirs[i]
-
-        with case_directory(sweep_path, i, meshdir):
-            pass
+        case_dir.mkdir(parents=True, exist_ok=True)
 
         script_contxt = script_context_from_params(
             params, target_quoted, meshdir, extra_key_map=runtime.extra_key_map

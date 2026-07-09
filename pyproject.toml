@@ -22,7 +22,6 @@ dependencies = [
     "pyevtk>=1.6.0",
     "pytest-cov[test]>=6.0",
     "pytest[test]>=8.0",
-    "scikit-learn>=1.7.2",
     "scipy>=1.15.3",
     "tqdm>=4.67.3",
 ]

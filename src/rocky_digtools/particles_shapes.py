@@ -8,6 +8,8 @@ and can apply them to a Rocky particle via :meth:`Shape.particle2rocky`.
 import os
 from typing import Any
 
+import numpy as np
+
 
 class Shape:
     """Base class for particle shapes in Ansys Rocky.
@@ -123,10 +125,11 @@ class Shape:
         # with multiple sizes
         elif isinstance(self.radius, dict):
             # Check if the values are valid
-            if sum(self.radius.values()) == 1:
-                self.radius = {k: v * 100 for k, v in self.radius.items()}
-            elif sum(self.radius.values()) == 100:
-                pass
+            total = sum(self.radius.values())
+            if np.isclose(total, 1):
+                proportions = {k: v * 100 for k, v in self.radius.items()}
+            elif np.isclose(total, 100):
+                proportions = self.radius
             else:
                 raise ValueError(
                     "The size dict values must sum to 1 or 100."
@@ -138,23 +141,19 @@ class Shape:
 
             # Create a new PSD for each particle size
             init_pct = 100
-            sorted_dict = dict(sorted(self.radius.items(), reverse=True))
-            for i, (size, proportion) in enumerate(sorted_dict):
-                # Create a new PSD for each particle size
-                # and set the size and cumulative percentage
-                # Use exec to create a variable with the name of the PSD
-                # This is not recommended, but it works for this case ;)
-                exec(f"psd{i} = size_distr_lst.New()")
-                exec(f'psd{i}.SetSize(size, "m")')
-                exec(f"psd{i}.SetCumulativePercentage(init_pct)")
+            for size, proportion in sorted(proportions.items(), reverse=True):
+                psd = size_distr_lst.New()
+                psd.SetSize(size, "m")
+                psd.SetCumulativePercentage(init_pct)
                 init_pct -= proportion
+
+        else:
+            raise TypeError("Radius must be a float, int or a dictionary.")
 
         # Set particle material
         particle.SetMaterial(material)
         if rolling_friction != "none":
             particle.SetRollingResistance(rolling_friction)
-        else:
-            raise TypeError("Radius must be a float, int or a dictionary.")
 
         particle.SetShape(self.shape_type)
         particle.SetSizeType(self.size_type)

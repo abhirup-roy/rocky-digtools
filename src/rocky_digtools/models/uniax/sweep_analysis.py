@@ -6,16 +6,21 @@ repeating sweeps.
 """
 
 import glob
-import shutil
-import re
 import os
+import re
+import shutil
 import sqlite3
 import subprocess
-import matplotlib.pyplot as plt
+
 import pandas as pd
+
 from ...utils import cd
 
-PWD = os.getcwd()
+PWD: str | None = None
+
+
+def _root_dir() -> str:
+    return PWD or os.getcwd()
 
 
 def load_data(sweep_name: str) -> pd.DataFrame:
@@ -31,7 +36,7 @@ def load_data(sweep_name: str) -> pd.DataFrame:
     Raises:
         FileNotFoundError: If the database file does not exist.
     """
-    db_path = os.path.join(PWD, sweep_name, "results.db")
+    db_path = os.path.join(_root_dir(), sweep_name, "results.db")
 
     if not os.path.isfile(db_path):
         raise FileNotFoundError(f"Results db not found at {db_path}")
@@ -79,24 +84,14 @@ def dump_results(
             file. Defaults to ``"pyoutputs"``.
         minimal: If ``True``, drop columns with only one unique value.
     """
-    outputs_dir_path = os.path.join(PWD, sweep_name, outputs_dir)
-    if not os.path.isdir(outputs_dir):
-        os.makedirs(outputs_dir_path, exist_ok=True)
+    outputs_dir_path = os.path.join(_root_dir(), sweep_name, outputs_dir)
+    os.makedirs(outputs_dir_path, exist_ok=True)
 
     df = load_data(sweep_name=sweep_name).set_index("case_n").sort_index()
     if minimal:
         df = df.loc[:, df.nunique(dropna=True) > 1]
 
     _write_df_file(df=df, name="results", filetype=filetype, s_dir=outputs_dir_path)
-    if filetype == "csv":
-        dump_path = os.path.join(outputs_dir_path, "results.csv")
-        df.to_csv(dump_path)
-    elif filetype == "parquet":
-        dump_path = os.path.join(outputs_dir_path, "results.parquet.gzip")
-        df.to_parquet(dump_path, compression="gzip")
-    elif filetype == "feather":
-        dump_path = os.path.join(outputs_dir_path, "results.feather")
-        df.to_feather(dump_path)
 
 
 def find_faulty_runs(sweep_name: str, dump: bool = False):
@@ -111,7 +106,7 @@ def find_faulty_runs(sweep_name: str, dump: bool = False):
         dump: If ``True``, write the list of faulty cases to
             ``faulty_cases.txt`` in the sweep directory.
     """
-    sweep_dir = os.path.join(PWD, sweep_name)
+    sweep_dir = os.path.join(_root_dir(), sweep_name)
     # Get all subdirectories that start with 'case_'
     case_dirs = [
         entry.name
@@ -181,7 +176,7 @@ def dump_results_backup(sweep_name: str, filetype: str = "csv", minimal: bool = 
     Raises:
         NotADirectoryError: If the sweep directory does not exist.
     """
-    sweep_dir = os.path.join(PWD, sweep_name)
+    sweep_dir = os.path.join(_root_dir(), sweep_name)
     if not os.path.isdir(sweep_dir):
         raise NotADirectoryError(f"Sweep directory not found at {sweep_dir}")
 

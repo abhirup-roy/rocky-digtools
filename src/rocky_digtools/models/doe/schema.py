@@ -40,6 +40,10 @@ _COMMON_HEAD_FIELDS = (
 _COMMON_TAIL_FIELDS = ("normal", "tangential", "rolling", "adhesion")
 
 COMMON_RANGES: dict[str, tuple[float, Optional[float]]] = {
+    "radius": (0, None),
+    "density": (0, None),
+    "poisson": (0, 0.5),
+    "youngmod": (0, None),
     "fric_dyn_pp": (0, None),
     "fric_stat_pp": (0, None),
     "fric_rolling_pp": (0, None),
@@ -302,49 +306,8 @@ def iter_ofat(
     """
     params = _load_json(json_path)
 
-    shape = params["shape"]
-    if isinstance(shape, list):
+    if isinstance(params["shape"], list):
         raise ValueError("Shape parameters should be a single object, not a list.")
-
-    # Validate no list values in base parameters
-    base_scalars = [
-        params["particle_properties"]["radius"],
-        params["particle_properties"]["density"],
-        params["particle_properties"]["poisson"],
-        params["particle_properties"]["youngmod"],
-        params["inseractions"]["pp"]["fric_dyn"],
-        params["inseractions"]["pp"]["fric_stat"],
-        params["inseractions"]["pp"]["fric_rolling"],
-        params["inseractions"]["pp"]["cor"],
-        params["inseractions"]["pw"]["fric_dyn"],
-        params["inseractions"]["pw"]["fric_stat"],
-        params["inseractions"]["pw"]["cor"],
-        params["experim_settings"]["box_len"],
-        params["contact_model"]["normal"],
-        params["contact_model"]["tangential"],
-        params["contact_model"]["rolling"],
-        params["contact_model"]["adhesion"],
-        shape,
-    ]
-    for extra_field in schema.extra_experim_fields:
-        base_scalars.append(params["experim_settings"][extra_field])
-
-    for p in base_scalars:
-        if isinstance(p, list):
-            raise ValueError(
-                f"Parameter values should not be lists. Use a single value for {p}."
-            )
-
-    if not isinstance(ofat_values, dict):
-        raise ValueError("OFAT values must be provided as a dictionary.")
-
-    ofat_dict_check = set(ofat_values.keys()) == set(
-        ["parameters", "test_range", "hold_values"]
-    )
-    if not ofat_dict_check:
-        raise ValueError(
-            "OFAT values must contain 'parameters', 'test_range', and 'hold_values' keys."
-        )
 
     ofat_base_valid = {
         "radius": params["particle_properties"]["radius"],
@@ -368,73 +331,93 @@ def iter_ofat(
         "horiz_ar": params["shape"]["horiz_ar"],
         "n_corners": params["shape"]["n_corners"],
         "sq_degree": params["shape"]["sq_degree"],
+        "particle_path": params["shape"].get("particle_path", ""),
+        "smoothness": params["shape"].get("smoothness", 0.5),
     }
     for extra_field in schema.extra_experim_fields:
         ofat_base_valid[extra_field] = params["experim_settings"][extra_field]
 
-    if not set(ofat_values["parameters"]).issubset(set(ofat_base_valid.keys())):
+    # Base parameters must be scalars — a list here means a sweep config was
+    # passed to OFAT by mistake.
+    for name, value in ofat_base_valid.items():
+        if isinstance(value, list):
+            raise ValueError(
+                f"Parameter values should not be lists. Use a single value for {name!r}."
+            )
+
+    if not isinstance(ofat_values, dict):
+        raise ValueError("OFAT values must be provided as a dictionary.")
+
+    if set(ofat_values.keys()) != {"parameters", "test_range", "hold_values"}:
+        raise ValueError(
+            "OFAT values must contain 'parameters', 'test_range', and 'hold_values' keys."
+        )
+
+    if not all(isinstance(ofat_values[key], list) for key in ofat_values):
+        raise ValueError("OFAT parameters, test_range, and hold_values must be lists.")
+    if not (
+        len(ofat_values["parameters"])
+        == len(ofat_values["test_range"])
+        == len(ofat_values["hold_values"])
+    ):
+        raise ValueError("Mismatched lengths in OFAT values.")
+
+    if len(set(ofat_values["parameters"])) != len(ofat_values["parameters"]):
+        raise ValueError("OFAT parameters must be unique.")
+    if not set(ofat_values["parameters"]).issubset(ofat_base_valid.keys()):
         raise ValueError(
             f"Invalid OFAT parameters. Allowed parameters are: {list(ofat_base_valid.keys())}"
         )
 
+    if not isinstance(n_points, (int, np.integer)) or n_points < 2:
+        raise ValueError("n_points must be an integer of at least 2.")
     range_valid = schema.ranges
 
-    for k in ofat_values["parameters"]:
+    # Single pass: validate each factor's baseline and test range, then build
+    # its levels and hold point.
+    levels = {}
+    for k, test_range, hold_value in zip(
+        ofat_values["parameters"],
+        ofat_values["test_range"],
+        ofat_values["hold_values"],
+    ):
+        if k not in range_valid:
+            raise ValueError(f"OFAT parameter '{k}' is categorical and cannot be ranged.")
+        if not isinstance(test_range, (tuple, list)) or len(test_range) != 2:
+            raise ValueError(f"Test range for parameter '{k}' must be a (min, max) pair.")
         lb, ub = range_valid[k]
         ub = ub if ub is not None else float("inf")
-        if k not in ofat_base_valid:
-            raise ValueError(f"Parameter '{k}' is not in the base parameters.")
-        if not (lb <= ofat_base_valid[k] <= ub):
+
+        if not np.isfinite(ofat_base_valid[k]) or not (lb <= ofat_base_valid[k] <= ub):
             raise ValueError(
                 f"Base parameter '{k}' with value {ofat_base_valid[k]} is out of range ({lb}, {ub})."
             )
 
-        param_idx = ofat_values["parameters"].index(k)
-        test_range = ofat_values["test_range"][param_idx]
-        hold_value = ofat_values["hold_values"][param_idx]
-
-        if hold_value not in ["h", "l", "m"]:
+        if hold_value not in ("h", "l", "m"):
             raise ValueError(
                 f"Hold value '{hold_value}' for parameter '{k}' is not valid. Use 'h', 'l', or 'm'."
             )
 
         lb_i, ub_i = test_range
-        if lb_i >= ub_i:
+        if not np.isfinite([lb_i, ub_i]).all() or lb_i >= ub_i:
             raise ValueError(
                 f"Invalid test range for parameter '{k}': ({lb_i}, {ub_i})"
             )
-        elif not (lb <= lb_i <= ub and lb <= ub_i <= ub):  # type: ignore
+        if not (lb <= lb_i <= ub and lb <= ub_i <= ub):
             raise ValueError(
                 f"Test range for parameter '{k}' with values ({lb_i}, {ub_i}) is out of bounds ({lb}, {ub})."
             )
 
-    if len(ofat_values["parameters"]) != len(ofat_values["test_range"]) or len(
-        ofat_values["hold_values"]
-    ) != len(ofat_values["parameters"]):
-        raise ValueError("Mismatched lengths in OFAT values.")
-
-    levels = {}
-    for i, rng in enumerate(ofat_values["test_range"]):
-        lb, ub = rng
-        if lb >= ub:
-            raise ValueError(
-                f"Invalid range for parameter '{ofat_values['parameters'][i]}': ({lb}, {ub})"
-            )
-
-        dtype = int if ofat_values["parameters"][i] == "n_corners" else float
-        levels_i = np.linspace(lb, ub, n_points, dtype=dtype)
-        if ofat_values["hold_values"][i] == "h":
-            hold_i = levels_i[-1]
-        elif ofat_values["hold_values"][i] == "l":
-            hold_i = levels_i[0]
-        elif ofat_values["hold_values"][i] == "m":
-            hold_i = levels_i[(levels_i.size - 1) // 2]
-        else:
-            raise ValueError(
-                f"Invalid hold value for parameter '{ofat_values['parameters'][i]}':\
-                            {ofat_values['hold_values'][i]}. Select from 'h', 'l', 'm'."
-            )
-        levels[ofat_values["parameters"][i]] = {"levels": levels_i, "hold": hold_i}
+        dtype = int if k == "n_corners" else float
+        levels_i = np.linspace(lb_i, ub_i, n_points, dtype=dtype)
+        if dtype is int:
+            levels_i = np.unique(levels_i)
+        hold_i = {
+            "h": levels_i[-1],
+            "l": levels_i[0],
+            "m": levels_i[(levels_i.size - 1) // 2],
+        }[hold_value]
+        levels[k] = {"levels": levels_i, "hold": hold_i}
 
     baseline = {param: v["hold"] for param, v in levels.items()}
     experiments = [baseline.copy()]
