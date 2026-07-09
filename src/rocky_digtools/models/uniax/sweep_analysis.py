@@ -6,13 +6,14 @@ repeating sweeps.
 """
 
 import glob
-import shutil
-import re
 import os
+import re
+import shutil
 import sqlite3
 import subprocess
-import matplotlib.pyplot as plt
+
 import pandas as pd
+
 from ...utils import cd
 
 PWD = os.getcwd()
@@ -88,15 +89,6 @@ def dump_results(
         df = df.loc[:, df.nunique(dropna=True) > 1]
 
     _write_df_file(df=df, name="results", filetype=filetype, s_dir=outputs_dir_path)
-    if filetype == "csv":
-        dump_path = os.path.join(outputs_dir_path, "results.csv")
-        df.to_csv(dump_path)
-    elif filetype == "parquet":
-        dump_path = os.path.join(outputs_dir_path, "results.parquet.gzip")
-        df.to_parquet(dump_path, compression="gzip")
-    elif filetype == "feather":
-        dump_path = os.path.join(outputs_dir_path, "results.feather")
-        df.to_feather(dump_path)
 
 
 def find_faulty_runs(sweep_name: str, dump: bool = False):
