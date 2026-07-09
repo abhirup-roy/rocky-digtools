@@ -14,7 +14,6 @@ import numpy as _np
 
 from .. import particles_shapes as _particles_shapes
 from ..pyrocky.helpers import pyrocky_run as _pyrocky_run
-from . import doe, shearcell, uniax
 
 __all__ = ["doe", "uniax", "shearcell"]
 
@@ -282,3 +281,7 @@ class PyrockySimulation(_abc.ABC):
     def post_process(self):
         """Post-process simulation results and generate plots."""
         pass
+
+
+# Avoiding circular import
+from . import doe, shearcell, uniax  # noqa: E402
