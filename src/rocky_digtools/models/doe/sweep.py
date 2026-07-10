@@ -112,13 +112,13 @@ def launch_sweep(
         case_dir = case_dirs[i]
         case_dir.mkdir(parents=True, exist_ok=True)
 
-        script_contxt = script_context_from_params(
+        script_context = script_context_from_params(
             params, target_quoted, meshdir, extra_key_map=runtime.extra_key_map
         )
-        script_contxt["SHAPES_MODULE_PATH"] = shapes_module_path
+        script_context["SHAPES_MODULE_PATH"] = shapes_module_path
         prepare_case(
             case_dir,
-            script_contxt,
+            script_context,
             backend,
             runtime,
             rocky_template,

@@ -16,18 +16,18 @@ from ..doe import launch_sweep as _generic_launch_sweep
 from .compr_meshgen import create_meshes
 
 UNIAX_SCHEMA = ParamSchema(
-    extra_experim_fields=("p_compress",),
+    extra_experiment_fields=("p_compress",),
     extra_ranges={"p_compress": (0, None)},
 )
 
 
-def _settings_extra(script_contxt: dict) -> dict:
+def _settings_extra(script_context: dict) -> dict:
     """Compression timings and pressure for the pyrocky ``settings.json``."""
     return {
         "t_fill": 1.0,
         "t_settle": 0.5,
         "t_compress": 2.0,
-        "p_compress": script_contxt["P_COMPRESS"],
+        "p_compress": script_context["P_COMPRESS"],
     }
 
 

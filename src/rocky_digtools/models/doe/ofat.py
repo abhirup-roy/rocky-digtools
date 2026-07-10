@@ -170,14 +170,14 @@ def launch_ofat(
         exp_dict = {var: row[var] for var in vars_list}
         exp_dict.update(base_dict)
 
-        script_contxt = {
+        script_context = {
             script_key: exp_dict[field_name]
             for field_name, script_key in _COMMON_KEY_MAP.items()
         }
         for field_name, script_key in runtime.extra_key_map.items():
-            script_contxt[script_key] = exp_dict[field_name]
+            script_context[script_key] = exp_dict[field_name]
 
-        script_contxt.update(
+        script_context.update(
             {
                 "VERT_AR": exp_dict.get("vert_ar"),
                 "HORIZ_AR": exp_dict.get("horiz_ar"),
@@ -192,13 +192,13 @@ def launch_ofat(
         )
 
         if exp_dict["rolling"] != "none":
-            script_contxt["ROLLING_FRICTION"] = exp_dict["fric_rolling_pp"]
+            script_context["ROLLING_FRICTION"] = exp_dict["fric_rolling_pp"]
         else:
-            script_contxt["ROLLING_FRICTION"] = 0
+            script_context["ROLLING_FRICTION"] = 0
 
         prepare_case(
             case_dir,
-            script_contxt,
+            script_context,
             backend,
             runtime,
             rocky_template,

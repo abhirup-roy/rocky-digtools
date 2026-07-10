@@ -23,7 +23,7 @@ import pandas as pd
 from ...particles_shapes import normalise_radius
 
 # Fields common to every model's base JSON configuration, in canonical order.
-# A model's extra `experim_settings` fields (see ParamSchema) are inserted
+# A model's extra `experiment_settings` fields (see ParamSchema) are inserted
 # immediately after "box_len" and before the contact-model fields.
 _COMMON_HEAD_FIELDS = (
     "radius",
@@ -49,16 +49,16 @@ _COMMON_FIELD_PATHS: dict[str, tuple[str, ...]] = {
     "density": ("particle_properties", "density"),
     "poisson": ("particle_properties", "poisson"),
     "youngmod": ("particle_properties", "youngmod"),
-    "fric_dyn_pp": ("inseractions", "pp", "fric_dyn"),
-    "fric_stat_pp": ("inseractions", "pp", "fric_stat"),
-    "fric_rolling_pp": ("inseractions", "pp", "fric_rolling"),
-    "cor_pp": ("inseractions", "pp", "cor"),
-    "surf_en_pp": ("inseractions", "pp", "surf_en"),
-    "fric_dyn_pw": ("inseractions", "pw", "fric_dyn"),
-    "fric_stat_pw": ("inseractions", "pw", "fric_stat"),
-    "cor_pw": ("inseractions", "pw", "cor"),
-    "surf_en_pw": ("inseractions", "pw", "surf_en"),
-    "box_len": ("experim_settings", "box_len"),
+    "fric_dyn_pp": ("interactions", "pp", "fric_dyn"),
+    "fric_stat_pp": ("interactions", "pp", "fric_stat"),
+    "fric_rolling_pp": ("interactions", "pp", "fric_rolling"),
+    "cor_pp": ("interactions", "pp", "cor"),
+    "surf_en_pp": ("interactions", "pp", "surf_en"),
+    "fric_dyn_pw": ("interactions", "pw", "fric_dyn"),
+    "fric_stat_pw": ("interactions", "pw", "fric_stat"),
+    "cor_pw": ("interactions", "pw", "cor"),
+    "surf_en_pw": ("interactions", "pw", "surf_en"),
+    "box_len": ("experiment_settings", "box_len"),
     "normal": ("contact_model", "normal"),
     "tangential": ("contact_model", "tangential"),
     "rolling": ("contact_model", "rolling"),
@@ -72,7 +72,7 @@ def field_paths(schema: ParamSchema) -> dict[str, tuple[str, ...]]:
     """Map each schema field name to its nested JSON key path."""
     return {
         **_COMMON_FIELD_PATHS,
-        **{f: ("experim_settings", f) for f in schema.extra_experim_fields},
+        **{f: ("experiment_settings", f) for f in schema.extra_experiment_fields},
     }
 
 
@@ -235,7 +235,7 @@ class ParamSchema:
     """Declares a model's extension to the common DOE parameter set.
 
     Attributes:
-        extra_experim_fields: Names of additional ``experim_settings`` JSON
+        extra_experiment_fields: Names of additional ``experiment_settings`` JSON
             keys (beyond ``box_len``) that this model varies, e.g.
             ``("p_compress",)`` for uniaxial compression.
         extra_ranges: Validation ranges (``(lower, upper)``, ``upper=None``
@@ -243,13 +243,13 @@ class ParamSchema:
             checking.
     """
 
-    extra_experim_fields: tuple[str, ...] = ()
+    extra_experiment_fields: tuple[str, ...] = ()
     extra_ranges: dict[str, tuple[float, Optional[float]]] = field(default_factory=dict)
 
     @property
     def fields(self) -> tuple[str, ...]:
         """All parameter field names in canonical product/tuple order."""
-        return _COMMON_HEAD_FIELDS + self.extra_experim_fields + _COMMON_TAIL_FIELDS
+        return _COMMON_HEAD_FIELDS + self.extra_experiment_fields + _COMMON_TAIL_FIELDS
 
     @property
     def ranges(self) -> dict[str, tuple[float, Optional[float]]]:
@@ -278,8 +278,10 @@ def _split_common_extra(
     schema: ParamSchema, values: dict[str, Any]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Split a field-name -> value mapping into common and extra kwargs."""
-    common = {k: v for k, v in values.items() if k not in schema.extra_experim_fields}
-    extra = {k: v for k, v in values.items() if k in schema.extra_experim_fields}
+    common = {
+        k: v for k, v in values.items() if k not in schema.extra_experiment_fields
+    }
+    extra = {k: v for k, v in values.items() if k in schema.extra_experiment_fields}
     return common, extra
 
 

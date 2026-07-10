@@ -385,7 +385,7 @@ def gen_particle(shape_dict: dict[str, float | str]) -> None:
         case _:
             raise ValueError(
                 f"Unknown shape type: {shape}. "
-                "Supported shapes are: 'sphere', 'spherocylinder', 'polyhedron', 'custom_polyhedron'."
+                "Supported shapes are: 'sphere', 'sphero_cylinder', 'polyhedron', 'custom_polyhedron'."
             )
 
     # Instantiate the shape for the particle
@@ -754,7 +754,7 @@ def post_process(plot: Optional[bool] = True) -> None:
     compr_contacts = _calc_contact_no(particles, -1, 0.9)
     contacts_ratio = compr_contacts / uncompr_contacts
 
-    # Caclulate shear strengths
+    # Calculate shear strengths
     uncompr_mean_stress, uncompr_dev_stress = _calc_shear_strength(
         particles, settled_timestep, 0.9
     )

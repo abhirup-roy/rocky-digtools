@@ -312,8 +312,8 @@ class Settings:
 
         shape = data["shape"]
         props = data["particle_properties"]
-        inter = data["inseractions"]  # note: typo in JSON preserved
-        exp = data["experim_settings"]
+        inter = data["interactions"]
+        exp = data["experiment_settings"]
         contact = data["contact_model"]
 
         return cls(

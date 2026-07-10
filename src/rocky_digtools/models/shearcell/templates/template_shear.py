@@ -76,7 +76,7 @@ def get_params(params):
     else:
         raise ValueError("params must be a JSON string or a dictionary.")
 
-    keys_valdn = [
+    valid_keys = [
         'p_radius', 'p_density', 'p_youngmod',
         'p_poisson', 'rolling_model', 'pp_dynamic_friction',
         'pp_static_friction', 'rolling_friction', 'pp_cor',
@@ -89,10 +89,10 @@ def get_params(params):
     ]
 
     # Find the keys that are not in the list of valid keys
-    invalid_keys = set(params_dict.keys()) - set(keys_valdn)
+    invalid_keys = set(params_dict.keys()) - set(valid_keys)
     if invalid_keys:
         raise ValueError(
-            f"Invalid parameter(s): {', '.join(invalid_keys)}. Expected one of {keys_valdn}.")
+            f"Invalid parameter(s): {', '.join(invalid_keys)}. Expected one of {valid_keys}.")
 
     # Check if the values are compatible with Rocky API
     if 'rolling_model' in params_dict.keys():
@@ -126,13 +126,13 @@ def get_params(params):
 
         case 'constant':
             assert 'adhesive_distance' in params_dict['adhesion'].keys(
-            ), "If adhesion_model is 'linear', 'adhesion_distance' must be specified."
+            ), "If adhesion_model is 'constant', 'adhesive_distance' must be specified."
             assert 'force_fraction' in params_dict['adhesion'].keys(
-            ), "If adhesion_model is 'linear', 'force_fraction' must be specified."
+            ), "If adhesion_model is 'constant', 'force_fraction' must be specified."
 
         case 'linear':
             assert 'adhesive_distance' in params_dict['adhesion'].keys(
-            ), "If adhesion_model is 'linear', 'adhesion_distance' must be specified."
+            ), "If adhesion_model is 'linear', 'adhesive_distance' must be specified."
             assert 'stiffness_fraction' in params_dict['adhesion'].keys(
             ), "If adhesion_model is 'linear', 'stiffness_fraction' must be specified."
 
@@ -468,7 +468,7 @@ def gen_particle():
         case _:
             raise ValueError(
                 f"Unknown shape type: {params_dict['shape']['shape_name']}. "
-                "Supported shapes are: 'sphere', 'spherocylinder', 'polyhedron', 'custom_polyhedron'."
+                "Supported shapes are: 'sphere', 'sphero_cylinder', 'polyhedron', 'custom_polyhedron'."
             )
         
     shape_obj.particle2rocky(
@@ -569,7 +569,7 @@ def animate_walls():
 
 def config_domain():
     """
-    Configure the domain settings and periodic coniditions for the simulation.
+    Configure the domain settings and periodic conditions for the simulation.
     """
 
     global study, params_dict

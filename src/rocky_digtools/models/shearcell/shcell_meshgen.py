@@ -27,7 +27,7 @@ class ParallelPlateMesh:
         Length of the plate (in meters).
         DEFAULT: 1.0
     mesh_size : float
-        Mesh siaze in gmsh
+        Mesh size in Gmsh.
         DEFAULT: 0.001
     save_dir : str
         Directory to save the generated mesh files.
@@ -122,11 +122,11 @@ class ParallelPlateMesh:
         l_vane = self.l_vanes_frac * self.box_width
         vane_range = np.arange(start=z0, stop=z1, step=l_vane)
 
-        for l in vane_range:
+        for z in vane_range:
             vane = gmsh.model.occ.addBox(
                 x=-box_w / 2,
                 y=self.box_width / 2,
-                z=l,
+                z=z,
                 dx=box_w,
                 dy=-self.h_vane,
                 dz=self.vane_thickness,

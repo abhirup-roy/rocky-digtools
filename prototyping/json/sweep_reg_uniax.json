@@ -5,7 +5,7 @@
             "vert_ar": 1,
             "horiz_ar": 1,
             "n_corners": 10,
-            "sq_degrees": 2.0
+            "sq_degree": 2.0
         }
     ],
     "particle_properties": {
@@ -22,7 +22,7 @@
             5e6
         ]
     },
-    "inseractions": {
+    "interactions": {
         "pp": {
             "fric_dyn": [
                 0.7
@@ -52,7 +52,7 @@
             ]
         }
     },
-    "experim_settings": {
+    "experiment_settings": {
         "box_len": [
             0.001,
             0.0025,

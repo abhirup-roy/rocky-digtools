@@ -16,7 +16,7 @@ from ..doe import launch_sweep as _generic_launch_sweep
 from .shcell_meshgen import create_meshes
 
 SHEARCELL_SCHEMA = ParamSchema(
-    extra_experim_fields=(
+    extra_experiment_fields=(
         "t_settle",
         "t_compression",
         "sigma_pre",
@@ -38,17 +38,17 @@ SHEARCELL_SCHEMA = ParamSchema(
 )
 
 
-def _settings_extra(script_contxt: dict) -> dict:
+def _settings_extra(script_context: dict) -> dict:
     """Shear-protocol timings and config for the pyrocky ``settings.json``."""
     return {
-        "t_settle": script_contxt["T_SETTLE"],
-        "t_compression": script_contxt["T_COMPRESSION"],
-        "sigma_pre": script_contxt["SIGMA_PRE"],
-        "n_shear_points": script_contxt["N_SHEAR_POINTS"],
-        "n_procs": script_contxt["NPROCS"],
-        "neighbour_search": script_contxt["NEIGHBOUR_SEARCH"],
-        "t_shear": script_contxt["T_SHEAR"],
-        "shear_vel": script_contxt["SHEAR_VEL"],
+        "t_settle": script_context["T_SETTLE"],
+        "t_compression": script_context["T_COMPRESSION"],
+        "sigma_pre": script_context["SIGMA_PRE"],
+        "n_shear_points": script_context["N_SHEAR_POINTS"],
+        "n_procs": script_context["NPROCS"],
+        "neighbour_search": script_context["NEIGHBOUR_SEARCH"],
+        "t_shear": script_context["T_SHEAR"],
+        "shear_vel": script_context["SHEAR_VEL"],
     }
 
 

@@ -105,7 +105,7 @@ class Shape:
             "sphero_cylinder",
             "sphero_polygon",
             "sphero_polyhedron",
-            "briquete",
+            "briquette",
             "faceted_cylinder",
             "assembly",
             "straight_fiber",

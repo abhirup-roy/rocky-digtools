@@ -2,8 +2,8 @@
 
 Defines a :class:`Settings` dataclass for storing simulation parameters and a
 :class:`ShearCellSimulation` class that encapsulates the entire
-workflow of configuring, running, and post-processing a uniaxial compression
-test in Ansys Rocky.
+workflow of configuring, running, and post-processing a shear-cell test in
+Ansys Rocky.
 """
 
 import os
@@ -311,8 +311,8 @@ class Settings:
 
         shape = data["shape"]
         props = data["particle_properties"]
-        inter = data["inseractions"]  # note: typo in JSON preserved
-        exp = data["experim_settings"]
+        inter = data["interactions"]
+        exp = data["experiment_settings"]
         contact = data["contact_model"]
 
         return cls(
