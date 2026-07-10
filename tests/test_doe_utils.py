@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -10,10 +11,16 @@ from rocky_digtools.models.doe import (
     SimParams,
     case_directory,
     get_unique_box_lens,
+    iter_params,
     prepare_case,
     script_context_from_params,
 )
-from rocky_digtools.models.uniax.doe import UNIAX_RUNTIME
+from rocky_digtools.models.uniax.doe import UNIAX_RUNTIME, UNIAX_SCHEMA
+from rocky_digtools.models import PyrockySimulation
+from rocky_digtools.models.uniax.simulation import (
+    Settings,
+    UniaxialCompressionSimulation,
+)
 
 
 def _script_context(params, target="GPU"):
@@ -109,9 +116,11 @@ class TestScriptContextFromParams:
             "DYNAMIC_FRICTION_PP",
             "STATIC_FRICTION_PP",
             "COR_PP",
+            "SURF_EN_PP",
             "DYNAMIC_FRICTION_PW",
             "STATIC_FRICTION_PW",
             "COR_PW",
+            "SURF_EN_PW",
             "L_BOX",
             "P_COMPRESS",
             "NORMAL_MODEL",
@@ -176,6 +185,56 @@ class TestGetUniqueBoxLens:
 
 
 class TestPrepareCase:
+    def test_jkr_flows_to_rocky_and_contact_reporting(
+        self, tmp_path, sweep_json
+    ):
+        import json
+
+        config = json.loads(Path(sweep_json).read_text())
+        config["interactions"]["pp"]["surf_en"] = [0.12]
+        config["interactions"]["pw"]["surf_en"] = [0.34]
+        config["contact_model"]["adhesion"] = ["JKR"]
+        config["shape"][0]["n_corners"] = 10
+        Path(sweep_json).write_text(json.dumps(config))
+        params = iter_params(sweep_json, UNIAX_SCHEMA)[0]
+
+        case_dir = tmp_path / "case_0"
+        (case_dir / "meshes").mkdir(parents=True)
+        prepare_case(
+            case_dir,
+            _script_context(params),
+            backend="pyrocky",
+            runtime=UNIAX_RUNTIME,
+        )
+
+        data = json.loads((case_dir / "settings.json").read_text())
+        settings = Settings.from_dict({**data, "project_dir": str(case_dir)})
+
+        pp_interaction = MagicMock()
+        pw_interaction = MagicMock()
+        interactions = MagicMock()
+        interactions.GetMaterialsInteraction.side_effect = [
+            pp_interaction,
+            pw_interaction,
+        ]
+        study = MagicMock()
+        study.GetMaterialsInteractionCollection.return_value = interactions
+        simulation = SimpleNamespace(
+            settings=settings,
+            _study=study,
+            _materials={"particle_mat": MagicMock(), "wall_mat": MagicMock()},
+            _ser=lambda proxy: proxy,
+        )
+
+        PyrockySimulation.load_interactions(simulation)
+        PyrockySimulation.sim_physics(simulation)
+        UniaxialCompressionSimulation.load_modules(simulation)
+
+        pp_interaction.SetSurfaceEnergy.assert_called_once_with(0.12, "J/m2")
+        pw_interaction.SetSurfaceEnergy.assert_called_once_with(0.34, "J/m2")
+        study.GetPhysics.return_value.SetAdhesionModel.assert_called_once_with("JKR")
+        study.GetContactData.return_value.EnableIncludeAdhesiveContacts.assert_called_once_with()
+
     def test_pyrocky_backend(self, tmp_path, sample_sim_params):
         case_dir = tmp_path / "case_0"
         case_dir.mkdir()
