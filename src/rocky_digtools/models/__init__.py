@@ -106,6 +106,10 @@ class PyrockySimulation(_abc.ABC):
         pw_interaction.SetDynamicFriction(self.settings.fric_dyn_pw)
         pw_interaction.SetStaticFriction(self.settings.fric_stat_pw)
 
+        if self.settings.adhesion_model == "JKR":
+            pp_interaction.SetSurfaceEnergy(self.settings.surf_en_pp, "J/m2")
+            pw_interaction.SetSurfaceEnergy(self.settings.surf_en_pw, "J/m2")
+
     def gen_particle(self):
         """Create a particle in the study and configure its shape and size.
 

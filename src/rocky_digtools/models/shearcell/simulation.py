@@ -66,6 +66,8 @@ class Settings:
     fric_stat_pw: float
     cor_pw: float
 
+    surf_en_pp: float = 0.0
+    surf_en_pw: float = 0.0
     normal_force_model: Literal[
         "linear_hysteresis", "linear_elastic_viscous", "damped_hertzian", "custom"
     ] = "linear_hysteresis"
@@ -163,6 +165,8 @@ class Settings:
             "fric_stat_pp": self.fric_stat_pp,
             "fric_dyn_pw": self.fric_dyn_pw,
             "fric_stat_pw": self.fric_stat_pw,
+            "surf_en_pp": self.surf_en_pp,
+            "surf_en_pw": self.surf_en_pw,
             "rolling_fric": self.rolling_fric,
             "vert_ar": self.vert_ar,
             "horiz_ar": self.horiz_ar,
@@ -200,6 +204,12 @@ class Settings:
             errors.append(
                 f"'adhesion_model' must be one of {valid_adhesion}, "
                 f"got '{self.adhesion_model}'."
+            )
+        elif self.adhesion_model == "JKR" and min(
+            self.surf_en_pp, self.surf_en_pw
+        ) <= 0:
+            errors.append(
+                "'surf_en_pp' and 'surf_en_pw' must be > 0 for the JKR model."
             )
 
         valid_rolling = {"none", "type_1", "type_3", "custom"}
@@ -322,10 +332,12 @@ class Settings:
             fric_dyn_pp=inter["pp"]["fric_dyn"],
             fric_stat_pp=inter["pp"]["fric_stat"],
             cor_pp=inter["pp"]["cor"],
+            surf_en_pp=inter["pp"].get("surf_en", 0.0),
             rolling_fric=inter["pp"].get("fric_rolling", 0.0),
             fric_dyn_pw=inter["pw"]["fric_dyn"],
             fric_stat_pw=inter["pw"]["fric_stat"],
             cor_pw=inter["pw"]["cor"],
+            surf_en_pw=inter["pw"].get("surf_en", 0.0),
             # Experiment settings
             particle_box_len=exp["box_len"],
             t_settle=exp["t_settle"],
@@ -550,11 +562,16 @@ class ShearCellSimulation(PyrockySimulation):
         bottom_frame.ApplyTo(self._ser(self._mesh["bottom_wall"]))
 
     def load_modules(self):
-        """Enable the Boundary Collision Statistics module for power input."""
+        """Enable collision statistics and adhesive-contact reporting."""
         module_collection = self._study.GetModuleCollection()
         bcs = module_collection.GetModule("Boundary Collision Statistics")
         bcs.EnableModule()
         bcs.SetModuleProperty("Intensities", value=True)
+
+        contacts_data = self._study.GetContactData()
+        contacts_data.EnableCollectContactsData()
+        if self.settings.adhesion_model != "none":
+            contacts_data.EnableIncludeAdhesiveContacts()
 
     def _select_processor(self, solver):
         """Select the simulation processor, writing a warning file on fallback.

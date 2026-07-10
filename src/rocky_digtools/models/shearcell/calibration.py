@@ -16,7 +16,7 @@ import pandas as pd
 from ...utils import cd
 from ..doe import ShapeConfig, SimParams, script_context_from_params
 from ..doe.runtime import render_pyrocky_script
-from ..doe.schema import _split_common_extra, field_paths, get_nested
+from ..doe.schema import _split_common_extra, field_paths, field_values
 from .doe import SHEARCELL_RUNTIME, SHEARCELL_SCHEMA
 from .simulation import aggregate_results
 
@@ -34,8 +34,8 @@ def _set_nested(data: dict[str, Any], path: tuple[str, ...], value: Any) -> None
 
 
 def _reject_lists(config: dict[str, Any]) -> None:
-    for field, path in _FIELD_PATHS.items():
-        if isinstance(get_nested(config, path), list):
+    for field, value in field_values(config, SHEARCELL_SCHEMA).items():
+        if isinstance(value, list):
             raise ValueError(
                 f"Calibration base config must use scalar values; {field!r} is a list."
             )
@@ -56,7 +56,7 @@ def _with_overrides(
 
 
 def _sim_params_from_config(config: dict[str, Any]) -> SimParams:
-    values = {name: get_nested(config, path) for name, path in _FIELD_PATHS.items()}
+    values = field_values(config, SHEARCELL_SCHEMA)
     common, extra = _split_common_extra(SHEARCELL_SCHEMA, values)
     return SimParams(
         **common, shape=ShapeConfig.from_dict(config["shape"]), extra=extra

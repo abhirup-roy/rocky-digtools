@@ -44,11 +44,13 @@ assert ROLLING_MODEL in ["type_1", "type_3", "none", "custom"]
 PP_DYNAMIC_FRICTION: float = {{DYNAMIC_FRICTION_PP}}
 PP_STATIC_FRICTION: float = {{STATIC_FRICTION_PP}}
 PP_COR: float = {{COR_PP}}
+PP_SURFACE_ENERGY: float = {{SURF_EN_PP}}  # J/m²
 ROLLING_FRICTION: float = {{ROLLING_FRICTION}}
 
 PW_DYNAMIC_FRICTION: float = {{DYNAMIC_FRICTION_PW}}
 PW_STATIC_FRICTION: float = {{STATIC_FRICTION_PW}}
 PW_COR: float = {{COR_PW}}
+PW_SURFACE_ENERGY: float = {{SURF_EN_PW}}  # J/m²
 
 for i, _p in enumerate(
     [
@@ -99,6 +101,8 @@ assert TANGENTIAL_FORCE_MODEL in [
 
 ADHESION_MODEL = "{{ADH_MODEL}}"
 assert ADHESION_MODEL in ["none", "constant", "linear", "JKR", "custom"]
+if ADHESION_MODEL == "JKR" and min(PP_SURFACE_ENERGY, PW_SURFACE_ENERGY) <= 0:
+    raise ValueError("Surface energies must be > 0 for the JKR model.")
 
 PARTICLE_BOX_LEN: float = {{L_BOX}}  # m
 T_FILL: float = 0.5  # s
@@ -270,6 +274,10 @@ def load_interactions() -> None:
     pw_interaction.SetRestitutionCoefficient(PW_COR)
     pw_interaction.SetStaticFriction(PW_STATIC_FRICTION)
     pw_interaction.SetDynamicFriction(PW_DYNAMIC_FRICTION)
+
+    if ADHESION_MODEL == "JKR":
+        pp_interaction.SetSurfaceEnergy(PP_SURFACE_ENERGY, "J/m2")
+        pw_interaction.SetSurfaceEnergy(PW_SURFACE_ENERGY, "J/m2")
 
 
 def set_psd() -> None:

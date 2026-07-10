@@ -34,9 +34,11 @@ _COMMON_HEAD_FIELDS = (
     "fric_stat_pp",
     "fric_rolling_pp",
     "cor_pp",
+    "surf_en_pp",
     "fric_dyn_pw",
     "fric_stat_pw",
     "cor_pw",
+    "surf_en_pw",
     "box_len",
 )
 _COMMON_TAIL_FIELDS = ("normal", "tangential", "rolling", "adhesion")
@@ -51,15 +53,19 @@ _COMMON_FIELD_PATHS: dict[str, tuple[str, ...]] = {
     "fric_stat_pp": ("inseractions", "pp", "fric_stat"),
     "fric_rolling_pp": ("inseractions", "pp", "fric_rolling"),
     "cor_pp": ("inseractions", "pp", "cor"),
+    "surf_en_pp": ("inseractions", "pp", "surf_en"),
     "fric_dyn_pw": ("inseractions", "pw", "fric_dyn"),
     "fric_stat_pw": ("inseractions", "pw", "fric_stat"),
     "cor_pw": ("inseractions", "pw", "cor"),
+    "surf_en_pw": ("inseractions", "pw", "surf_en"),
     "box_len": ("experim_settings", "box_len"),
     "normal": ("contact_model", "normal"),
     "tangential": ("contact_model", "tangential"),
     "rolling": ("contact_model", "rolling"),
     "adhesion": ("contact_model", "adhesion"),
 }
+
+_COMMON_DEFAULTS = {"surf_en_pp": 0.0, "surf_en_pw": 0.0}
 
 
 def field_paths(schema: ParamSchema) -> dict[str, tuple[str, ...]]:
@@ -77,6 +83,19 @@ def get_nested(data: dict[str, Any], path: tuple[str, ...]) -> Any:
     return data
 
 
+def field_values(data: dict[str, Any], schema: ParamSchema) -> dict[str, Any]:
+    """Read schema values, applying defaults for optional common fields."""
+    values = {}
+    for name, path in field_paths(schema).items():
+        try:
+            values[name] = get_nested(data, path)
+        except KeyError:
+            if name not in _COMMON_DEFAULTS:
+                raise
+            values[name] = _COMMON_DEFAULTS[name]
+    return values
+
+
 COMMON_RANGES: dict[str, tuple[float, Optional[float]]] = {
     "radius": (0, None),
     "density": (0, None),
@@ -86,9 +105,11 @@ COMMON_RANGES: dict[str, tuple[float, Optional[float]]] = {
     "fric_stat_pp": (0, None),
     "fric_rolling_pp": (0, None),
     "cor_pp": (0, 1),
+    "surf_en_pp": (0, None),
     "fric_dyn_pw": (0, None),
     "fric_stat_pw": (0, None),
     "cor_pw": (0, 1),
+    "surf_en_pw": (0, None),
     "box_len": (0, None),
     "vert_ar": (0, None),
     "horiz_ar": (0, None),
@@ -167,6 +188,8 @@ class SimParams:
         tangential: Tangential contact force model name.
         rolling: Rolling resistance model name.
         adhesion: Adhesion model name.
+        surf_en_pp: Particle-particle surface energy in J/m².
+        surf_en_pw: Particle-wall surface energy in J/m².
         shape: Particle shape configuration.
         extra: Model-specific parameter values, keyed by field name.
     """
@@ -187,6 +210,8 @@ class SimParams:
     tangential: str
     rolling: str
     adhesion: str
+    surf_en_pp: float = 0.0
+    surf_en_pw: float = 0.0
     shape: ShapeConfig = field(default_factory=ShapeConfig)
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -239,9 +264,10 @@ def _load_json(json_path: str) -> OrderedDict:
 
 def _field_sources(params: OrderedDict, schema: ParamSchema) -> dict[str, Any]:
     """Map each schema field name to its (possibly list-valued) JSON source."""
-    sources = {
-        name: get_nested(params, path) for name, path in field_paths(schema).items()
-    }
+    sources = field_values(params, schema)
+    for name in _COMMON_DEFAULTS:
+        if not isinstance(sources[name], list):
+            sources[name] = [sources[name]]
     # A radius distribution is one parameter value, not a sweep iterable.
     if isinstance(sources["radius"], dict):
         sources["radius"] = [sources["radius"]]
@@ -336,9 +362,7 @@ def iter_ofat(
     if isinstance(params["shape"], list):
         raise ValueError("Shape parameters should be a single object, not a list.")
 
-    ofat_base_valid = {
-        name: get_nested(params, path) for name, path in field_paths(schema).items()
-    }
+    ofat_base_valid = field_values(params, schema)
     ofat_base_valid.update(
         shape=params["shape"]["name"],
         vert_ar=params["shape"]["vert_ar"],

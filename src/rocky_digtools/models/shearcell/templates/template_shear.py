@@ -138,9 +138,9 @@ def get_params(params):
 
         case 'JKR':
             assert all(key in params_dict['adhesion'] for key in [
-                'p_surface_energy', 'pp_surface_energy', 'pw_surface_energy'
+                'pp_surface_energy', 'pw_surface_energy'
             ]), \
-                "If adhesion_model is 'JKR', 'p_surface_energy', 'pp_surface_energy', and 'pw_surface_energy' must be specified."
+                "If adhesion_model is 'JKR', 'pp_surface_energy' and 'pw_surface_energy' must be specified."
             assert params_dict['normal_force_model'] == 'damped_hertzian', \
                 "If adhesion_model is 'JKR', normal_force_model must be 'damped_hertzian'."
 
@@ -477,12 +477,6 @@ def gen_particle():
         rolling_friction=params_dict['rolling_friction']
     )
 
-    # Give Rocky surface energy if available
-    if (surf_energy := params_dict['adhesion'].get('p_surface_energy')):
-        particle.SetSurfaceEnergy(surf_energy, 'J/m2')
-
-
-
 def animate_walls():
     """
     Animate the walls for the parallel shear test.
@@ -626,6 +620,11 @@ def load_modules():
     bcs = module_collection.GetModule('Boundary Collision Statistics')
     bcs.EnableModule()
     bcs.SetModuleProperty('Intensities', value=True)
+
+    contacts_data = study.GetContactData()
+    contacts_data.EnableCollectContactsData()
+    if params_dict['adhesion']['adhesion_model'] != 'none':
+        contacts_data.EnableIncludeAdhesiveContacts()
 
 
 def _select_processor(solver, processor: str) -> None:
@@ -1139,7 +1138,11 @@ params = {
     "pw_cor": {{COR_PW}},
     "normal_force_model": {{NORMAL_MODEL}},
     "tangential_force_model": {{TANG_MODEL}},
-    "adhesion": {{ADHESION_DICT}},
+    "adhesion": {
+        "adhesion_model": "{{ADH_MODEL}}",
+        "pp_surface_energy": {{SURF_EN_PP}},
+        "pw_surface_energy": {{SURF_EN_PW}}
+    },
     "particle_box_len": {{L_BOX}},
     "t_settle": {{T_SETTLE}},
     "t_compression": {{T_COMPRESSION}},

@@ -45,6 +45,8 @@ class Settings:
         fric_dyn_pw: Dynamic friction coefficient (particle–wall).
         fric_stat_pw: Static friction coefficient (particle–wall).
         cor_pw: Coefficient of restitution (particle–wall).
+        surf_en_pp: Particle-particle surface energy (J/m²).
+        surf_en_pw: Particle-wall surface energy (J/m²).
         normal_force_model: Normal contact force model.
         tangential_force_model: Tangential contact force model.
         adhesion_model: Adhesion model.
@@ -82,6 +84,8 @@ class Settings:
     fric_stat_pw: float
     cor_pw: float
 
+    surf_en_pp: float = 0.0
+    surf_en_pw: float = 0.0
     normal_force_model: Literal["linear_hysteresis", "hertz", "linear_spring"] = (
         "linear_hysteresis"
     )
@@ -180,6 +184,8 @@ class Settings:
             "fric_stat_pp": self.fric_stat_pp,
             "fric_dyn_pw": self.fric_dyn_pw,
             "fric_stat_pw": self.fric_stat_pw,
+            "surf_en_pp": self.surf_en_pp,
+            "surf_en_pw": self.surf_en_pw,
             "rolling_fric": self.rolling_fric,
             "vert_ar": self.vert_ar,
             "horiz_ar": self.horiz_ar,
@@ -208,6 +214,12 @@ class Settings:
             errors.append(
                 f"'adhesion_model' must be one of {valid_adhesion}, "
                 f"got '{self.adhesion_model}'."
+            )
+        elif self.adhesion_model == "JKR" and min(
+            self.surf_en_pp, self.surf_en_pw
+        ) <= 0:
+            errors.append(
+                "'surf_en_pp' and 'surf_en_pw' must be > 0 for the JKR model."
             )
 
         valid_rolling = {"none", "type_a", "type_b"}
@@ -321,10 +333,12 @@ class Settings:
             fric_dyn_pp=inter["pp"]["fric_dyn"],
             fric_stat_pp=inter["pp"]["fric_stat"],
             cor_pp=inter["pp"]["cor"],
+            surf_en_pp=inter["pp"].get("surf_en", 0.0),
             rolling_fric=inter["pp"].get("fric_rolling", 0.0),
             fric_dyn_pw=inter["pw"]["fric_dyn"],
             fric_stat_pw=inter["pw"]["fric_stat"],
             cor_pw=inter["pw"]["cor"],
+            surf_en_pw=inter["pw"].get("surf_en", 0.0),
             # Experiment settings
             particle_box_len=exp["box_len"],
             p_compress=exp["p_compress"],
