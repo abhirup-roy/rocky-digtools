@@ -82,7 +82,7 @@ class Settings:
     rolling_model: Literal["none", "type_1", "type_3", "custom"] = "none"
     neighbour_search: Literal["BVH", "RegularGrid", "SparseGrid"] = "BVH"
     processor: Literal["CPU", "GPU", "MULTI_GPU"] = "GPU"
-    loc: str = "az-gpu"  # SLURM cluster target: 'bb-cpu', 'az-gpu', or 'custom'
+    loc: str = "az-gpu"  # SLURM cluster preset
     t_fill: float = 0.5  # constant fill time for shear template
 
     mesh_dir: Optional[str | pathlib.Path] = None
@@ -241,7 +241,7 @@ class Settings:
                 f"'processor' must be one of {valid_processor}, got '{self.processor}'."
             )
 
-        valid_loc = {"bb-cpu", "az-gpu", "custom"}
+        valid_loc = {"bb-cpu", "bb-gpu", "az-gpu", "custom"}
         if self.loc not in valid_loc:
             errors.append(f"'loc' must be one of {valid_loc}, got '{self.loc}'.")
 
@@ -845,6 +845,11 @@ class ShearCellSimulation(PyrockySimulation):
                 "module load bear-apps/2023a\n"
                 "module load ANSYS_Rocky/2024R2.0"
             ),
+            "bb-gpu": (
+                "module purge; module load bluebear\n"
+                "module load bear-apps/2024a\n"
+                "module load ANSYS_Rocky/2025R2"
+            ),
             "az-gpu": "ml rocky/25.2.0",
             "custom": "",
         }
@@ -861,6 +866,12 @@ class ShearCellSimulation(PyrockySimulation):
                 "#SBATCH --nodes=1\n"
                 "#SBATCH --qos=bbdefault\n"
                 "#SBATCH --mail-type=ALL\n"
+            )
+        elif p.loc == "bb-gpu":
+            header = (
+                header_common + "#SBATCH --ntasks=1\n"
+                "#SBATCH --gres=gpu:1\n"
+                "#SBATCH --qos=bbgpu\n"
             )
         elif p.loc == "az-gpu":
             header = (

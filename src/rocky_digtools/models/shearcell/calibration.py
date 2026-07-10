@@ -68,8 +68,19 @@ def prepare_candidate_settings(
     candidate_dir: str | Path,
     parameter_values: dict[str, Any],
     target: str = "CPU",
+    loc: str | None = None,
 ) -> Path:
     """Write one shear-cell candidate's ``settings.json``."""
+    target = target.upper()
+    if target not in {"CPU", "GPU", "MULTI_GPU"}:
+        raise ValueError("target must be 'CPU', 'GPU', or 'MULTI_GPU'.")
+    if loc is None:
+        loc = "bb-cpu" if target == "CPU" else "az-gpu"
+    if loc not in {"bb-cpu", "bb-gpu", "az-gpu", "custom"}:
+        raise ValueError(
+            "loc must be 'bb-cpu', 'bb-gpu', 'az-gpu', or 'custom'."
+        )
+
     candidate_dir = Path(candidate_dir)
     candidate_dir.mkdir(parents=True, exist_ok=True)
 
@@ -81,7 +92,11 @@ def prepare_candidate_settings(
         extra_key_map=SHEARCELL_RUNTIME.extra_key_map,
     )
     render_pyrocky_script(candidate_dir, ctx, SHEARCELL_RUNTIME)
-    return candidate_dir / "settings.json"
+    settings_path = candidate_dir / "settings.json"
+    settings = json.loads(settings_path.read_text())
+    settings["loc"] = loc
+    settings_path.write_text(json.dumps(settings, indent=4))
+    return settings_path
 
 
 def yield_locus_error(
@@ -137,13 +152,17 @@ def evaluate_candidate(
     poll_interval: float = 60,
     timeout: float | None = None,
     penalty: float = PENALTY_ERROR,
+    target: str = "CPU",
+    loc: str | None = None,
 ) -> float:
     """Run one ACCES candidate and return its scalar calibration error."""
     candidate_dir = Path(work_dir) / f"candidate_{int(access_id)}"
     candidate_dir.mkdir(parents=True, exist_ok=True)
     try:
         values = parameters["value"].to_dict()
-        settings_path = prepare_candidate_settings(base_json, candidate_dir, values)
+        settings_path = prepare_candidate_settings(
+            base_json, candidate_dir, values, target=target, loc=loc
+        )
 
         subprocess.run(
             [
@@ -198,6 +217,8 @@ def _render_access_script(
     free_parameters: dict[str, dict[str, float]],
     poll_interval: float,
     timeout: float | None,
+    target: str = "CPU",
+    loc: str | None = None,
 ) -> str:
     names, minimums, maximums, values, sigmas = _normalise_free_parameters(
         free_parameters
@@ -224,6 +245,8 @@ error = evaluate_candidate(
     base_json={str(Path(base_json).resolve())!r},
     work_dir={str(Path(work_dir).resolve())!r},
     target_yield_locus={str(Path(target_yield_locus).resolve())!r},
+    target={target.upper()!r},
+    loc={loc!r},
     poll_interval={float(poll_interval)!r},
     timeout={timeout!r},
 )
@@ -241,8 +264,15 @@ def launch_calibration(
     poll_interval: float = 60,
     timeout: float | None = None,
     access_scheduler=None,
+    target: str = "CPU",
+    loc: str | None = None,
 ):
-    """Launch ACCES calibration for shear-cell yield-locus matching."""
+    """Launch ACCES calibration for shear-cell yield-locus matching.
+
+    ``target`` selects Rocky's processor; ``loc`` selects the matching
+    shear-point SLURM preset. If omitted, ``loc`` defaults to ``"bb-cpu"``
+    for CPU and ``"az-gpu"`` for GPU targets.
+    """
     try:
         import coexist
     except ImportError as exc:
@@ -263,6 +293,8 @@ def launch_calibration(
             target_yield_locus=target_yield_locus,
             work_dir=work_dir,
             free_parameters=free_parameters,
+            target=target,
+            loc=loc,
             poll_interval=poll_interval,
             timeout=timeout,
         )
