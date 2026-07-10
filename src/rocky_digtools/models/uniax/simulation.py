@@ -45,6 +45,8 @@ class Settings:
         fric_dyn_pw: Dynamic friction coefficient (particle–wall).
         fric_stat_pw: Static friction coefficient (particle–wall).
         cor_pw: Coefficient of restitution (particle–wall).
+        tang_stiff_ratio_pp: Particle-particle tangential stiffness ratio.
+        tang_stiff_ratio_pw: Particle-wall tangential stiffness ratio.
         surf_en_pp: Particle-particle surface energy (J/m²).
         surf_en_pw: Particle-wall surface energy (J/m²).
         normal_force_model: Normal contact force model.
@@ -84,6 +86,8 @@ class Settings:
     fric_stat_pw: float
     cor_pw: float
 
+    tang_stiff_ratio_pp: Optional[float] = None
+    tang_stiff_ratio_pw: Optional[float] = None
     surf_en_pp: float = 0.0
     surf_en_pw: float = 0.0
     normal_force_model: Literal["linear_hysteresis", "hertz", "linear_spring"] = (
@@ -192,6 +196,13 @@ class Settings:
         }
         for name, val in nonneg_fields.items():
             if val < 0:
+                errors.append(f"'{name}' must be >= 0, got {val}.")
+
+        for name, val in {
+            "tang_stiff_ratio_pp": self.tang_stiff_ratio_pp,
+            "tang_stiff_ratio_pw": self.tang_stiff_ratio_pw,
+        }.items():
+            if val is not None and val < 0:
                 errors.append(f"'{name}' must be >= 0, got {val}.")
 
         # --- Enum-like string fields ---
@@ -333,11 +344,13 @@ class Settings:
             fric_dyn_pp=inter["pp"]["fric_dyn"],
             fric_stat_pp=inter["pp"]["fric_stat"],
             cor_pp=inter["pp"]["cor"],
+            tang_stiff_ratio_pp=inter["pp"].get("tang_stiff_ratio"),
             surf_en_pp=inter["pp"].get("surf_en", 0.0),
             rolling_fric=inter["pp"].get("fric_rolling", 0.0),
             fric_dyn_pw=inter["pw"]["fric_dyn"],
             fric_stat_pw=inter["pw"]["fric_stat"],
             cor_pw=inter["pw"]["cor"],
+            tang_stiff_ratio_pw=inter["pw"].get("tang_stiff_ratio"),
             surf_en_pw=inter["pw"].get("surf_en", 0.0),
             # Experiment settings
             particle_box_len=exp["box_len"],

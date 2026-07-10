@@ -79,9 +79,11 @@ def get_params(params):
     valid_keys = [
         'p_radius', 'p_density', 'p_youngmod',
         'p_poisson', 'rolling_model', 'pp_dynamic_friction',
-        'pp_static_friction', 'rolling_friction', 'pp_cor',
+        'pp_static_friction', 'pp_tangential_stiffness_ratio',
+        'rolling_friction', 'pp_cor',
         'pw_dynamic_friction', 'pw_static_friction',
-        'pw_cor', 'normal_force_model', 'tangential_force_model',
+        'pw_tangential_stiffness_ratio', 'pw_cor',
+        'normal_force_model', 'tangential_force_model',
         'adhesion', 'particle_box_len', 't_settle',
         't_compression', 'sigma_pre', 'n_shear_points',
         'processor', 'n_procs', 'neighbour_search',
@@ -363,6 +365,15 @@ def material_interactions():
     if params_dict['rolling_model'] != 'none':
         pw_interaction.SetRollingFriction(
             params_dict['pw_rolling_friction']
+        )
+
+    if params_dict['pp_tangential_stiffness_ratio'] is not None:
+        pp_interaction.SetTangentialStiffnessRatio(
+            params_dict['pp_tangential_stiffness_ratio']
+        )
+    if params_dict['pw_tangential_stiffness_ratio'] is not None:
+        pw_interaction.SetTangentialStiffnessRatio(
+            params_dict['pw_tangential_stiffness_ratio']
         )
 
     # Set the adhesion values
@@ -1133,9 +1144,11 @@ params = {
     "pp_dynamic_friction": {{DYNAMIC_FRICTION_PP}},
     "pp_static_friction": {{STATIC_FRICTION_PP}},
     "pp_cor": {{COR_PP}},
+    "pp_tangential_stiffness_ratio": {{TANG_STIFF_RATIO_PP}},
     "pw_dynamic_friction": {{DYNAMIC_FRICTION_PW}},
     "pw_static_friction": {{STATIC_FRICTION_PW}},
     "pw_cor": {{COR_PW}},
+    "pw_tangential_stiffness_ratio": {{TANG_STIFF_RATIO_PW}},
     "normal_force_model": {{NORMAL_MODEL}},
     "tangential_force_model": {{TANG_MODEL}},
     "adhesion": {

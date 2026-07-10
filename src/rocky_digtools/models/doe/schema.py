@@ -34,10 +34,12 @@ _COMMON_HEAD_FIELDS = (
     "fric_stat_pp",
     "fric_rolling_pp",
     "cor_pp",
+    "tang_stiff_ratio_pp",
     "surf_en_pp",
     "fric_dyn_pw",
     "fric_stat_pw",
     "cor_pw",
+    "tang_stiff_ratio_pw",
     "surf_en_pw",
     "box_len",
 )
@@ -53,10 +55,12 @@ _COMMON_FIELD_PATHS: dict[str, tuple[str, ...]] = {
     "fric_stat_pp": ("interactions", "pp", "fric_stat"),
     "fric_rolling_pp": ("interactions", "pp", "fric_rolling"),
     "cor_pp": ("interactions", "pp", "cor"),
+    "tang_stiff_ratio_pp": ("interactions", "pp", "tang_stiff_ratio"),
     "surf_en_pp": ("interactions", "pp", "surf_en"),
     "fric_dyn_pw": ("interactions", "pw", "fric_dyn"),
     "fric_stat_pw": ("interactions", "pw", "fric_stat"),
     "cor_pw": ("interactions", "pw", "cor"),
+    "tang_stiff_ratio_pw": ("interactions", "pw", "tang_stiff_ratio"),
     "surf_en_pw": ("interactions", "pw", "surf_en"),
     "box_len": ("experiment_settings", "box_len"),
     "normal": ("contact_model", "normal"),
@@ -65,7 +69,12 @@ _COMMON_FIELD_PATHS: dict[str, tuple[str, ...]] = {
     "adhesion": ("contact_model", "adhesion"),
 }
 
-_COMMON_DEFAULTS = {"surf_en_pp": 0.0, "surf_en_pw": 0.0}
+_COMMON_DEFAULTS = {
+    "surf_en_pp": 0.0,
+    "surf_en_pw": 0.0,
+    "tang_stiff_ratio_pp": None,
+    "tang_stiff_ratio_pw": None,
+}
 
 
 def field_paths(schema: ParamSchema) -> dict[str, tuple[str, ...]]:
@@ -105,10 +114,12 @@ COMMON_RANGES: dict[str, tuple[float, Optional[float]]] = {
     "fric_stat_pp": (0, None),
     "fric_rolling_pp": (0, None),
     "cor_pp": (0, 1),
+    "tang_stiff_ratio_pp": (0, None),
     "surf_en_pp": (0, None),
     "fric_dyn_pw": (0, None),
     "fric_stat_pw": (0, None),
     "cor_pw": (0, 1),
+    "tang_stiff_ratio_pw": (0, None),
     "surf_en_pw": (0, None),
     "box_len": (0, None),
     "vert_ar": (0, None),
@@ -188,6 +199,8 @@ class SimParams:
         tangential: Tangential contact force model name.
         rolling: Rolling resistance model name.
         adhesion: Adhesion model name.
+        tang_stiff_ratio_pp: Particle-particle tangential stiffness ratio.
+        tang_stiff_ratio_pw: Particle-wall tangential stiffness ratio.
         surf_en_pp: Particle-particle surface energy in J/m².
         surf_en_pw: Particle-wall surface energy in J/m².
         shape: Particle shape configuration.
@@ -210,6 +223,8 @@ class SimParams:
     tangential: str
     rolling: str
     adhesion: str
+    tang_stiff_ratio_pp: Optional[float] = None
+    tang_stiff_ratio_pw: Optional[float] = None
     surf_en_pp: float = 0.0
     surf_en_pw: float = 0.0
     shape: ShapeConfig = field(default_factory=ShapeConfig)

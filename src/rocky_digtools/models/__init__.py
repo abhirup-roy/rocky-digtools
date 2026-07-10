@@ -106,6 +106,15 @@ class PyrockySimulation(_abc.ABC):
         pw_interaction.SetDynamicFriction(self.settings.fric_dyn_pw)
         pw_interaction.SetStaticFriction(self.settings.fric_stat_pw)
 
+        if self.settings.tang_stiff_ratio_pp is not None:
+            pp_interaction.SetTangentialStiffnessRatio(
+                self.settings.tang_stiff_ratio_pp
+            )
+        if self.settings.tang_stiff_ratio_pw is not None:
+            pw_interaction.SetTangentialStiffnessRatio(
+                self.settings.tang_stiff_ratio_pw
+            )
+
         if self.settings.adhesion_model == "JKR":
             pp_interaction.SetSurfaceEnergy(self.settings.surf_en_pp, "J/m2")
             pw_interaction.SetSurfaceEnergy(self.settings.surf_en_pw, "J/m2")
