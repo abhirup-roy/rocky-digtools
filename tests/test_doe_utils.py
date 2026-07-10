@@ -116,10 +116,12 @@ class TestScriptContextFromParams:
             "DYNAMIC_FRICTION_PP",
             "STATIC_FRICTION_PP",
             "COR_PP",
+            "TANG_STIFF_RATIO_PP",
             "SURF_EN_PP",
             "DYNAMIC_FRICTION_PW",
             "STATIC_FRICTION_PW",
             "COR_PW",
+            "TANG_STIFF_RATIO_PW",
             "SURF_EN_PW",
             "L_BOX",
             "P_COMPRESS",
@@ -193,6 +195,8 @@ class TestPrepareCase:
         config = json.loads(Path(sweep_json).read_text())
         config["interactions"]["pp"]["surf_en"] = [0.12]
         config["interactions"]["pw"]["surf_en"] = [0.34]
+        config["interactions"]["pp"]["tang_stiff_ratio"] = [0.45]
+        config["interactions"]["pw"]["tang_stiff_ratio"] = [0.67]
         config["contact_model"]["adhesion"] = ["JKR"]
         config["shape"][0]["n_corners"] = 10
         Path(sweep_json).write_text(json.dumps(config))
@@ -232,6 +236,8 @@ class TestPrepareCase:
 
         pp_interaction.SetSurfaceEnergy.assert_called_once_with(0.12, "J/m2")
         pw_interaction.SetSurfaceEnergy.assert_called_once_with(0.34, "J/m2")
+        pp_interaction.SetTangentialStiffnessRatio.assert_called_once_with(0.45)
+        pw_interaction.SetTangentialStiffnessRatio.assert_called_once_with(0.67)
         study.GetPhysics.return_value.SetAdhesionModel.assert_called_once_with("JKR")
         study.GetContactData.return_value.EnableIncludeAdhesiveContacts.assert_called_once_with()
 
