@@ -11,6 +11,31 @@ from typing import Any
 import numpy as np
 
 
+def normalise_radius(radius: float | dict) -> float | dict[float, float]:
+    """Validate a radius or JSON-friendly radius-to-fraction mapping."""
+    if isinstance(radius, (int, float)):
+        radius = float(radius)
+        if not np.isfinite(radius) or radius <= 0:
+            raise ValueError("Particle radius must be a positive finite number.")
+        return radius
+    if not isinstance(radius, dict) or not radius:
+        raise TypeError("Radius must be a number or a non-empty dictionary.")
+
+    try:
+        distribution = {float(size): float(fraction) for size, fraction in radius.items()}
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Radius distribution keys and values must be numeric.") from exc
+    if len(distribution) != len(radius):
+        raise ValueError("Radius distribution contains duplicate numeric sizes.")
+    if any(not np.isfinite(size) or size <= 0 for size in distribution):
+        raise ValueError("All particle radii must be positive finite numbers.")
+    if any(not np.isfinite(fraction) or fraction < 0 for fraction in distribution.values()):
+        raise ValueError("All radius fractions must be non-negative finite numbers.")
+    if not (np.isclose(sum(distribution.values()), 1) or np.isclose(sum(distribution.values()), 100)):
+        raise ValueError("Radius fractions must sum to 1 or 100.")
+    return distribution
+
+
 class Shape:
     """Base class for particle shapes in Ansys Rocky.
 
@@ -21,7 +46,7 @@ class Shape:
         shape_type: Rocky shape identifier string (e.g. ``"sphere"``,
             ``"polyhedron"``).
         radius: Particle radius in metres, or a dict mapping radii to
-            cumulative percentages for polydisperse distributions.
+            fractions for polydisperse distributions.
         vert_ar: Vertical aspect ratio.
         horiz_ar: Horizontal aspect ratio.
         smoothness: Surface smoothness.
@@ -58,8 +83,7 @@ class Shape:
 
         Args:
             shape_type: Rocky shape identifier string.
-            radius: Particle radius (m) or a dict mapping radii to
-                cumulative percentages.
+            radius: Particle radius (m) or a dict mapping radii to fractions.
             vert_ar: Vertical aspect ratio.
             horiz_ar: Horizontal aspect ratio.
             smoothness: Surface smoothness.
@@ -68,7 +92,7 @@ class Shape:
             size_type: Size specification mode — ``"sieve"``,
                 ``"equivalent_diameter"``, or ``"original_size_scale"``.
         """
-        self.radius = radius
+        self.radius = normalise_radius(radius)
         self.vert_ar = vert_ar
         self.horiz_ar = horiz_ar
         self.smoothness = smoothness
@@ -124,17 +148,11 @@ class Shape:
         # If it is a dictionary, create a particle size distribution
         # with multiple sizes
         elif isinstance(self.radius, dict):
-            # Check if the values are valid
             total = sum(self.radius.values())
             if np.isclose(total, 1):
                 proportions = {k: v * 100 for k, v in self.radius.items()}
-            elif np.isclose(total, 100):
-                proportions = self.radius
             else:
-                raise ValueError(
-                    "The size dict values must sum to 1 or 100."
-                    "Please provide a valid dictionary."
-                )
+                proportions = self.radius
             # Create a new particle and size distribution list
             size_distr_lst = particle.GetSizeDistributionList()
             size_distr_lst.Clear()
@@ -174,8 +192,7 @@ class Sphere(Shape):
     """Spherical particle shape.
 
     Args:
-        radius: Particle radius (m) or a dict mapping radii to
-            cumulative percentages.
+        radius: Particle radius (m) or a dict mapping radii to fractions.
     """
 
     def __init__(self, radius: float | dict[float, float]) -> None:
@@ -187,8 +204,7 @@ class Polyhedron(Shape):
     """Polyhedral particle shape.
 
     Args:
-        radius: Particle radius (m) or a dict mapping radii to
-            cumulative percentages.
+        radius: Particle radius (m) or a dict mapping radii to fractions.
         vert_ar: Vertical aspect ratio.
         horiz_ar: Horizontal aspect ratio.
         n_corners: Number of corners.
@@ -223,8 +239,7 @@ class SpheroCylinder(Shape):
     """Sphero-cylinder particle shape.
 
     Args:
-        radius: Particle radius (m) or a dict mapping radii to
-            cumulative percentages.
+        radius: Particle radius (m) or a dict mapping radii to fractions.
         vert_ar: Vertical aspect ratio (length-to-diameter ratio).
     """
 
@@ -237,8 +252,7 @@ class CustomPolyhedron(Shape):
 
     Args:
         stl_path: Path to the STL file defining the particle geometry.
-        radius: Particle radius (m) or a dict mapping radii to
-            cumulative percentages.
+        radius: Particle radius (m) or a dict mapping radii to fractions.
 
     Raises:
         FileNotFoundError: If the STL file does not exist.
@@ -267,17 +281,7 @@ class CustomPolyhedron(Shape):
             ValueError: If no material is provided.
             TypeError: If ``radius`` is not a float, int, or dict.
         """
-        particle.ImportFromSTL(stl_filename=self.stl_path, scale=1.0)
-        if material:
-            particle.SetMaterial(material)
-        else:
+        if not material:
             raise ValueError("Material must be provided for custom polyhedron shapes.")
-
-        particle.SetMaterial(material)
-        if rolling_friction != "none":
-            particle.SetRollingResistance(rolling_friction)
-        else:
-            raise TypeError("Radius must be a float, int or a dictionary.")
-
-        particle.SetShape(self.shape_type)
-        particle.SetSizeType(self.size_type)
+        particle.ImportFromSTL(stl_filename=self.stl_path, scale=1.0)
+        super().particle2rocky(particle, material, rolling_friction)

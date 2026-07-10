@@ -20,6 +20,8 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
+from ...particles_shapes import normalise_radius
+
 # Fields common to every model's base JSON configuration, in canonical order.
 # A model's extra `experim_settings` fields (see ParamSchema) are inserted
 # immediately after "box_len" and before the contact-model fields.
@@ -169,7 +171,7 @@ class SimParams:
         extra: Model-specific parameter values, keyed by field name.
     """
 
-    radius: float
+    radius: float | dict[float, float]
     density: float
     poisson: float
     youngmod: float
@@ -188,11 +190,14 @@ class SimParams:
     shape: ShapeConfig = field(default_factory=ShapeConfig)
     extra: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        self.radius = normalise_radius(self.radius)
+
     def __repr__(self) -> str:
         extra_repr = f", extra={self.extra!r}" if self.extra else ""
         return (
             f"SimParams(\n"
-            f"    r={self.radius:.3g}, ρ={self.density:.3g}, ν={self.poisson:.3g}, E={self.youngmod:.3g},\n"
+            f"    r={self.radius!r}, ρ={self.density:.3g}, ν={self.poisson:.3g}, E={self.youngmod:.3g},\n"
             f"    μ_pp={self.fric_dyn_pp:.3g}/{self.fric_stat_pp:.3g}, μ_pw={self.fric_dyn_pw:.3g}/{self.fric_stat_pw:.3g},\n"
             f"    e_pp={self.cor_pp:.3g}, e_pw={self.cor_pw:.3g},\n"
             f"    L={self.box_len:.3g}, shape={self.shape.name!r}{extra_repr}\n"
@@ -234,9 +239,13 @@ def _load_json(json_path: str) -> OrderedDict:
 
 def _field_sources(params: OrderedDict, schema: ParamSchema) -> dict[str, Any]:
     """Map each schema field name to its (possibly list-valued) JSON source."""
-    return {
+    sources = {
         name: get_nested(params, path) for name, path in field_paths(schema).items()
     }
+    # A radius distribution is one parameter value, not a sweep iterable.
+    if isinstance(sources["radius"], dict):
+        sources["radius"] = [sources["radius"]]
+    return sources
 
 
 def _split_common_extra(

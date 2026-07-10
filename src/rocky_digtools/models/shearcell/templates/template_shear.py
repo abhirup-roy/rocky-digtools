@@ -401,7 +401,11 @@ def insertions():
     global study, particle, params_dict, walls
 
     fill_box_vol = params_dict['particle_box_len']**3
-    particle_vol = 4 / 3 * np.pi * (params_dict['p_radius']**3)
+    radii = params_dict['p_radius']
+    if isinstance(radii, dict):
+        particle_vol = sum((4 / 3) * np.pi * r**3 * p for r, p in radii.items()) / sum(radii.values())
+    else:
+        particle_vol = 4 / 3 * np.pi * radii**3
     n_particles = fill_box_vol * 0.5/ particle_vol
     mass_particles = n_particles * params_dict['p_density'] * particle_vol
 

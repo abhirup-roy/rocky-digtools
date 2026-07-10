@@ -20,6 +20,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import signal, optimize
 
+from ...particles_shapes import normalise_radius
 from .shcell_meshgen import create_meshes, get_mesh_metrics
 from ...pyrocky.helpers import pyrocky_run
 from .. import PyrockySimulation
@@ -96,6 +97,7 @@ class Settings:
     smoothness: Optional[float] = None
 
     def __post_init__(self):
+        self.p_radius = normalise_radius(self.p_radius)
         if self.mesh_dir is None:
             self.mesh_dir = (
                 pathlib.Path(self.project_dir).parent
@@ -168,25 +170,6 @@ class Settings:
         for name, val in nonneg_fields.items():
             if val < 0:
                 errors.append(f"'{name}' must be >= 0, got {val}.")
-
-        if isinstance(self.p_radius, float):
-            if self.p_radius <= 0:
-                errors.append(f"'p_radius' must be > 0, got {self.p_radius}.")
-        elif isinstance(self.p_radius, dict):
-            if not self.p_radius:
-                errors.append("'p_radius' dict must not be empty.")
-            else:
-                if any(r <= 0 for r in self.p_radius.keys()):
-                    errors.append("All radii in 'p_radius' dict must be > 0.")
-                prob_sum = sum(self.p_radius.values())
-                if not (np.isclose(prob_sum, 1.0) or np.isclose(prob_sum, 100.0)):
-                    errors.append(
-                        f"'p_radius' probabilities must sum to 1 or 100, got {prob_sum}."
-                    )
-        else:
-            errors.append(
-                f"'p_radius' must be a float or dict, got {type(self.p_radius)}."
-            )
 
         valid_normal = {
             "linear_hysteresis",
