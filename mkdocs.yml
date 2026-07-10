@@ -1,8 +1,8 @@
-site_name: "Rocky-UniaxC"
-site_description: "Toolkit for multiscale uniaxial compression simulations in Ansys Rocky"
+site_name: "Rocky Digital Tools"
+site_description: "Toolkit for multiscale simulations in Ansys Rocky"
 site_author: "Abhirup Roy"
-repo_name: "abhiruproy/rocky-uniaxc"
-repo_url: "https://github.com/abhiruproy/rocky-uniaxc"
+repo_name: "abhirup-roy/rocky-digtools"
+repo_url: "https://github.com/abhirup-roy/rocky-digtools"
 
 theme:
   name: dracula
