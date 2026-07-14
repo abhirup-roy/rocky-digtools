@@ -259,6 +259,23 @@ def import_meshes(
             convert_yz=False
         )[0]
 
+        box_len = params_dict['particle_box_len']
+        top_wall_y = box_len / 2
+        domain_ceiling_y = box_len * 3 / 4
+        radii = params_dict['p_radius']
+        max_radius = max(radii) if isinstance(radii, dict) else radii
+        min_clearance = 2 * max_radius
+        inlet_y = np.asarray(insert_plane.GetVertices()).mean(axis=0)[1]
+        clearance = min(inlet_y - top_wall_y, domain_ceiling_y - inlet_y)
+
+        if clearance < min_clearance:
+            safe_inlet_y = (top_wall_y + domain_ceiling_y) / 2
+            if safe_inlet_y - top_wall_y < min_clearance:
+                raise ValueError(
+                    'Particle diameter exceeds the inlet clearance above the top wall.'
+                )
+            insert_plane.SetTranslation([0, safe_inlet_y - inlet_y, 0])
+
     # Save the walls in a global variable
     walls = [top_wall, bottom_wall, insert_plane] if INSERTIONS else [top_wall, bottom_wall]
 

@@ -269,28 +269,32 @@ class ParallelPlateMesh:
         gmsh.initialize()
         gmsh.model.add("insert")
 
+        # Keep the inlet centered in the clearance between the top wall
+        # (y = box_width / 2) and the domain ceiling (y = 3 * box_width / 4).
+        inlet_y = self.box_width * 5 / 8
+
         p1 = gmsh.model.geo.addPoint(
             self.box_width / 2,
-            self.box_width / 2 * 1.45,
+            inlet_y,
             self.box_width / 2,
             meshSize=self.mesh_size,
         )
         p2 = gmsh.model.geo.addPoint(
             -self.box_width / 2,
-            self.box_width / 2 * 1.45,
+            inlet_y,
             self.box_width / 2,
             meshSize=self.mesh_size,
         )
         p3 = gmsh.model.geo.addPoint(
             -self.box_width / 2,
-            self.box_width / 2 * 1.45,
+            inlet_y,
             -self.box_width / 2,
             meshSize=self.mesh_size,
         )
 
         p4 = gmsh.model.geo.addPoint(
             self.box_width / 2,
-            self.box_width / 2 * 1.45,
+            inlet_y,
             -self.box_width / 2,
             meshSize=self.mesh_size,
         )
