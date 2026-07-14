@@ -28,7 +28,9 @@ from .. import PyrockySimulation
 __all__ = ["Settings", "ShearCellSimulation", "run_shear_point", "aggregate_results"]
 
 
-def _phase_times(t_fill: float, t_settle: float, t_compression: float, t_shear: float, insert: bool) -> tuple[float, float, float, float]:
+def _phase_times(
+    t_fill: float, t_settle: float, t_compression: float, t_shear: float, insert: bool
+) -> tuple[float, float, float, float]:
     """Return cumulative fill, settle, compression, and shear end times."""
     fill_end = t_fill if insert else 0.0
     settle_end = fill_end + t_settle
@@ -214,9 +216,9 @@ class Settings:
                 f"'adhesion_model' must be one of {valid_adhesion}, "
                 f"got '{self.adhesion_model}'."
             )
-        elif self.adhesion_model == "JKR" and min(
-            self.surf_en_pp, self.surf_en_pw
-        ) <= 0:
+        elif (
+            self.adhesion_model == "JKR" and min(self.surf_en_pp, self.surf_en_pw) <= 0
+        ):
             errors.append(
                 "'surf_en_pp' and 'surf_en_pw' must be > 0 for the JKR model."
             )
@@ -628,7 +630,9 @@ class ShearCellSimulation(PyrockySimulation):
         solver = self._study.GetSolver()
         self._select_processor(solver)
 
-        runtime = _phase_times(p.t_fill, p.t_settle, p.t_compression, p.t_shear, insert)[-1]
+        runtime = _phase_times(
+            p.t_fill, p.t_settle, p.t_compression, p.t_shear, insert
+        )[-1]
         solver.SetSimulationDuration(runtime, "s")
 
         if not adaptive_ts:
@@ -706,6 +710,10 @@ class ShearCellSimulation(PyrockySimulation):
         np.save(self._outputs_dir / "shear_stresses.npy", tau_arr)
 
         return tau_avg
+
+    post_process = (
+        compute_preshear_stress  # alias for consistency with PyrockySimulation
+    )
 
     #  Shear-point case generation
     def _new_sim_settings(self, sigma: float) -> None:
@@ -1059,7 +1067,9 @@ def run_shear_point(case_dir: str, rocky: Any = None) -> float:
 
     result_path = case_dir / "result.json"
     temp_path = result_path.with_suffix(".tmp")
-    temp_path.write_text(json.dumps({"sigma": sigma, "sigma_idx": sigma_idx, "tau": tau_avg}))
+    temp_path.write_text(
+        json.dumps({"sigma": sigma, "sigma_idx": sigma_idx, "tau": tau_avg})
+    )
     temp_path.replace(result_path)
 
     return tau_avg
@@ -1195,7 +1205,11 @@ def aggregate_results(
             return None
         result = json.loads(result_path.read_text())
         idx = result.get("sigma_idx")
-        if not isinstance(idx, int) or not 0 < idx < len(tau) or result.get("sigma") != sigma[idx]:
+        if (
+            not isinstance(idx, int)
+            or not 0 < idx < len(tau)
+            or result.get("sigma") != sigma[idx]
+        ):
             raise ValueError(f"Invalid shear result provenance: {result_path}")
         tau[idx] = result.get("tau", np.nan)
 

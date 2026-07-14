@@ -188,6 +188,14 @@ def evaluate_candidate(
 def _normalise_free_parameters(
     free_parameters: dict[str, dict[str, float]],
 ) -> tuple[list[str], list[float], list[float], list[float], list[float]]:
+    if not isinstance(free_parameters, dict):
+        raise TypeError(
+            "free_parameters must be a dictionary mapping parameter names to "
+            "specifications, for example "
+            "{'fric_dyn_pp': {'min': 0.1, 'max': 1.0}}. "
+            f"Received {type(free_parameters).__name__}; a trailing comma after "
+            "the dictionary creates a tuple."
+        )
     names = list(free_parameters)
     minimums = []
     maximums = []
