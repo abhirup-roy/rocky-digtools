@@ -14,10 +14,11 @@ import numpy as np
 import pandas as pd
 
 from ...utils import cd
-from ..doe import ShapeConfig, SimParams, script_context_from_params
-from ..doe.runtime import render_pyrocky_script
+from ..doe import ShapeConfig, SimParams, script_context_from_params, shapes_module_path
+from ..doe.runtime import load_template, prepare_case, render_pyrocky_script
 from ..doe.schema import _split_common_extra, field_paths, field_values
 from .doe import SHEARCELL_RUNTIME, SHEARCELL_SCHEMA
+from .shcell_meshgen import get_mesh_metrics
 from .simulation import aggregate_results
 
 PENALTY_ERROR = 1.0e30
@@ -69,8 +70,11 @@ def prepare_candidate_settings(
     parameter_values: dict[str, Any],
     target: str = "CPU",
     loc: str | None = None,
+    backend: str = "pyrocky",
 ) -> Path:
-    """Write one shear-cell candidate's ``settings.json``."""
+    """Write one shear-cell candidate input and return its path."""
+    if backend not in {"pyrocky", "rocky_prepost"}:
+        raise ValueError("backend must be 'pyrocky' or 'rocky_prepost'.")
     target = target.upper()
     if target not in {"CPU", "GPU", "MULTI_GPU"}:
         raise ValueError("target must be 'CPU', 'GPU', or 'MULTI_GPU'.")
@@ -91,6 +95,38 @@ def prepare_candidate_settings(
         f'"{target.upper()}"',
         extra_key_map=SHEARCELL_RUNTIME.extra_key_map,
     )
+    if backend == "rocky_prepost":
+        for key in ("NORMAL_MODEL", "TANG_MODEL", "ROLLING_MODEL", "NEIGHBOUR_SEARCH"):
+            ctx[key] = repr(ctx[key])
+        mesh_dir = candidate_dir.parent / f"meshes_{params.box_len}"
+        if not mesh_dir.exists():
+            SHEARCELL_RUNTIME.create_meshes(
+                params.box_len, meshsize=0.01, out_dir=str(mesh_dir)
+            )
+        ctx.update(
+            LOC=loc,
+            SHAPES_MODULE_PATH=shapes_module_path,
+            SHAPE_DICT=json.dumps(
+                {
+                    "shape_name": params.shape.name,
+                    "vert_ar": params.shape.vert_ar,
+                    "horiz_ar": params.shape.horiz_ar,
+                    "n_corners": params.shape.n_corners,
+                    "sq_degree": params.shape.sq_degree,
+                    "stl_path": params.shape.particle_path,
+                }
+            ),
+            MESH_METRICS_DICT=json.dumps(get_mesh_metrics(str(mesh_dir / "topwall.stl"))),
+        )
+        prepare_case(
+            candidate_dir,
+            ctx,
+            backend,
+            SHEARCELL_RUNTIME,
+            load_template(SHEARCELL_RUNTIME, None),
+        )
+        return candidate_dir / SHEARCELL_RUNTIME.script_filename
+
     render_pyrocky_script(candidate_dir, ctx, SHEARCELL_RUNTIME)
     settings_path = candidate_dir / "settings.json"
     settings = json.loads(settings_path.read_text())
@@ -154,26 +190,34 @@ def evaluate_candidate(
     penalty: float = PENALTY_ERROR,
     target: str = "CPU",
     loc: str | None = None,
+    backend: str = "pyrocky",
 ) -> float:
     """Run one ACCES candidate and return its scalar calibration error."""
     candidate_dir = Path(work_dir) / f"candidate_{int(access_id)}"
     candidate_dir.mkdir(parents=True, exist_ok=True)
     try:
         values = parameters["value"].to_dict()
-        settings_path = prepare_candidate_settings(
-            base_json, candidate_dir, values, target=target, loc=loc
+        input_path = prepare_candidate_settings(
+            base_json, candidate_dir, values, target=target, loc=loc, backend=backend
         )
 
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "rocky_digtools.models.shearcell.case_runner",
-                str(settings_path),
-            ],
-            check=True,
-            cwd=str(candidate_dir),
-        )
+        if backend == "rocky_prepost":
+            subprocess.run(
+                ["Rocky", "--script", str(input_path), "--headless"],
+                check=True,
+                cwd=str(candidate_dir),
+            )
+        else:
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "rocky_digtools.models.shearcell.case_runner",
+                    str(input_path),
+                ],
+                check=True,
+                cwd=str(candidate_dir),
+            )
         wait_for_shearcell_metrics(candidate_dir, poll_interval, timeout)
 
         outputs_dir = candidate_dir / "pyoutputs"
@@ -227,6 +271,7 @@ def _render_access_script(
     timeout: float | None,
     target: str = "CPU",
     loc: str | None = None,
+    backend: str = "pyrocky",
 ) -> str:
     names, minimums, maximums, values, sigmas = _normalise_free_parameters(
         free_parameters
@@ -255,6 +300,7 @@ error = evaluate_candidate(
     target_yield_locus={str(Path(target_yield_locus).resolve())!r},
     target={target.upper()!r},
     loc={loc!r},
+    backend={backend!r},
     poll_interval={float(poll_interval)!r},
     timeout={timeout!r},
 )
@@ -274,13 +320,22 @@ def launch_calibration(
     access_scheduler=None,
     target: str = "CPU",
     loc: str | None = None,
+    backend: str | None = None,
 ):
     """Launch ACCES calibration for shear-cell yield-locus matching.
 
     ``target`` selects Rocky's processor; ``loc`` selects the matching
-    shear-point SLURM preset. If omitted, ``loc`` defaults to ``"bb-cpu"``
-    for CPU and ``"az-gpu"`` for GPU targets.
+    shear-point SLURM preset. ``backend`` selects the ``"pyrocky"`` case
+    runner or the ``"rocky_prepost"`` Jinja script, defaulting to the
+    package backend. If omitted, ``loc`` defaults to ``"bb-cpu"`` for CPU
+    and ``"az-gpu"`` for GPU targets.
     """
+    if backend is None:
+        from . import BACKEND
+
+        backend = BACKEND
+    if backend not in {"pyrocky", "rocky_prepost"}:
+        raise ValueError("backend must be 'pyrocky' or 'rocky_prepost'.")
     try:
         import coexist
     except ImportError as exc:
@@ -303,6 +358,7 @@ def launch_calibration(
             free_parameters=free_parameters,
             target=target,
             loc=loc,
+            backend=backend,
             poll_interval=poll_interval,
             timeout=timeout,
         )

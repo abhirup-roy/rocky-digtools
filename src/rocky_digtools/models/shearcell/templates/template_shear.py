@@ -29,7 +29,7 @@ T_FILL = 0.5  # Time to fill the box with particles (s)
 
 # Import particle shapes using importlib
 shapes_spec = importlib.util.spec_from_file_location(
-    'particles_shapes', os.path.abspath('../../../particles_shapes.py'))
+    'particles_shapes', "{{SHAPES_MODULE_PATH}}")
 if not shapes_spec:
     raise ImportError("Could not find the particles_shapes.py file.")
 particle_shapes = importlib.util.module_from_spec(shapes_spec)
