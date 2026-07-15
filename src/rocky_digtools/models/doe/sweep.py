@@ -100,7 +100,17 @@ def launch_sweep(
     for size in tqdm(unique_sizes, desc="Generating meshes", unit="mesh"):
         shared_mesh_dir = sweep_path / f"meshes_{size}"
         shared_mesh_dir.mkdir(parents=True, exist_ok=True)
-        runtime.create_meshes(size, meshsize=0.01, out_dir=str(shared_mesh_dir))
+        mesh_kwargs = {}
+        if runtime.mesh_kwargs:
+            cases = [
+                {"box_len": params.box_len, **params.extra}
+                for params in all_params
+                if params.box_len == size
+            ]
+            mesh_kwargs = runtime.mesh_kwargs(cases)
+        runtime.create_meshes(
+            size, meshsize=0.01, out_dir=str(shared_mesh_dir), **mesh_kwargs
+        )
         size_to_mesh_dir[size] = shared_mesh_dir
 
     for i, params in tqdm(

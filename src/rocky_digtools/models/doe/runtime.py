@@ -49,6 +49,8 @@ class ModelRuntime:
             payload for the ``pyrocky`` backend (e.g. compression timings).
         create_meshes: The model's mesh-generation function, called as
             ``create_meshes(size, meshsize=..., out_dir=...)``.
+        mesh_kwargs: Optional model hook that derives extra mesh-generation
+            arguments from cases sharing the same box length.
     """
 
     case_runner_module: str
@@ -58,6 +60,7 @@ class ModelRuntime:
     extra_key_map: dict[str, str]
     settings_extra: Callable[[dict], dict]
     create_meshes: Callable[..., None]
+    mesh_kwargs: Optional[Callable[[list[dict]], dict]] = None
 
 
 @contextmanager

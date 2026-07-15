@@ -52,6 +52,12 @@ def _settings_extra(script_context: dict) -> dict:
     }
 
 
+def _mesh_kwargs(cases: list[dict]) -> dict:
+    """Use the greatest configured shear travel for a shared box mesh."""
+    longest = max(cases, key=lambda case: case["t_shear"] * case["shear_vel"])
+    return {"t_shear": longest["t_shear"], "shear_vel": longest["shear_vel"]}
+
+
 SHEARCELL_RUNTIME = ModelRuntime(
     case_runner_module="rocky_digtools.models.shearcell.case_runner",
     template_package="rocky_digtools.models.shearcell",
@@ -69,6 +75,7 @@ SHEARCELL_RUNTIME = ModelRuntime(
     },
     settings_extra=_settings_extra,
     create_meshes=create_meshes,
+    mesh_kwargs=_mesh_kwargs,
 )
 
 

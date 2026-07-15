@@ -157,7 +157,18 @@ def launch_ofat(
     for size in tqdm(unique_sizes, desc="Generating meshes", unit="mesh"):
         shared_mesh_dir = sweep_path / f"meshes_{size}"
         shared_mesh_dir.mkdir(parents=True, exist_ok=True)
-        runtime.create_meshes(size, meshsize=0.01, out_dir=str(shared_mesh_dir))
+        mesh_kwargs = {}
+        if runtime.mesh_kwargs:
+            cases = []
+            for _, row in experiments_df.iterrows():
+                case = {var: row[var] for var in vars_list}
+                case.update(base_dict)
+                if case["box_len"] == size:
+                    cases.append(case)
+            mesh_kwargs = runtime.mesh_kwargs(cases)
+        runtime.create_meshes(
+            size, meshsize=0.01, out_dir=str(shared_mesh_dir), **mesh_kwargs
+        )
         size_to_mesh_dir[size] = shared_mesh_dir
 
     for i, row in tqdm(

@@ -7,6 +7,11 @@ import numpy as np
 from stl.mesh import Mesh
 
 
+def required_plate_length(box_width: float, t_shear: float, shear_vel: float) -> float:
+    """Cover the box plus pre-shear and one parallel-shear translation."""
+    return (box_width + shear_vel * (2 * t_shear)) * 1.1
+
+
 class ParallelPlateMesh:
     """
     Class to generate a parallel plate mesh with vanes using gmsh.
@@ -61,6 +66,8 @@ class ParallelPlateMesh:
         top_mvt: bool = False,
         best_mesh_length: bool = True,
         vane_thickness: float = 1e-5,
+        t_shear: float = 5.0,
+        shear_vel: float = 30 / 60_000,
     ):
         self.box_width = box_width
         self.mesh_size = mesh_size
@@ -74,7 +81,9 @@ class ParallelPlateMesh:
         self.vane_thickness = vane_thickness
 
         if best_mesh_length:
-            self.plate_length = self._best_mesh_length(box_width, max_sim_dur=5)
+            self.plate_length = self._best_mesh_length(
+                box_width, t_shear=t_shear, shear_vel=shear_vel
+            )
 
         if run:
             self.gen_topwall(gui=False)
@@ -258,13 +267,10 @@ class ParallelPlateMesh:
             gmsh.write(os.path.join(save_dir, "bottomwall.stl"))
         gmsh.finalize()
 
-    def _best_mesh_length(self, box_width: float, max_sim_dur: float = 5) -> float:
-        max_speed = 30 / 60_000  # 30 mm/min
-        # ensure enough length for 2 shear cycles
-        max_length = (max_speed * max_sim_dur) * 2 + box_width
-        max_length *= 1.1  # add 10% for safety
-
-        return max_length
+    def _best_mesh_length(
+        self, box_width: float, t_shear: float, shear_vel: float
+    ) -> float:
+        return required_plate_length(box_width, t_shear, shear_vel)
 
     def gen_insert(self, gui: bool = False):
         gmsh.initialize()
@@ -327,6 +333,8 @@ def create_meshes(
     size: float,
     meshsize: float = 0.001,
     out_dir: str | pathlib.Path = "meshes",
+    t_shear: float = 5.0,
+    shear_vel: float = 30 / 60_000,
 ) -> ParallelPlateMesh:
     """Create the parallel-plate shear-cell meshes and save them to disk.
 
@@ -337,25 +345,37 @@ def create_meshes(
         size: Box width of the shear-cell domain (m).
         meshsize: Desired mesh resolution. Defaults to 0.001.
         out_dir: Directory to save the meshes. Defaults to ``"meshes"``.
+        t_shear: Duration of each shear phase (s). The plate accommodates two
+            phases: pre-shear and one subsequent parallel shear.
+        shear_vel: Bottom-wall shear velocity (m/s).
     """
     out_dir = pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    plate_length = required_plate_length(size, t_shear, shear_vel)
 
     ppm = ParallelPlateMesh(
         box_width=size,
         mesh_size=meshsize,
         save_dir=str(out_dir.resolve()),
         run=False,
+        t_shear=t_shear,
+        shear_vel=shear_vel,
     )
     with (out_dir / ".create_meshes.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if not all(
+        length_file = out_dir / ".plate_length"
+        try:
+            existing_length = float(length_file.read_text())
+        except (FileNotFoundError, ValueError):
+            existing_length = 0.0
+        if existing_length < plate_length or not all(
             (out_dir / filename).is_file()
             for filename in ("topwall.stl", "bottomwall.stl", "insert.stl")
         ):
             ppm.gen_topwall(gui=False)
             ppm.gen_bottomwall(gui=False)
             ppm.gen_insert(gui=False)
+            length_file.write_text(str(plate_length))
 
     return ppm
 

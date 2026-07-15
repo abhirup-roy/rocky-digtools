@@ -41,7 +41,9 @@ def _reject_lists(config: dict[str, Any]) -> None:
                 f"Calibration base config must use scalar values; {field!r} is a list."
             )
     if isinstance(config["shape"], list):
-        raise ValueError("Calibration base config must use one shape object, not a list.")
+        raise ValueError(
+            "Calibration base config must use one shape object, not a list."
+        )
 
 
 def _with_overrides(
@@ -81,9 +83,7 @@ def prepare_candidate_settings(
     if loc is None:
         loc = "bb-cpu" if target == "CPU" else "az-gpu"
     if loc not in {"bb-cpu", "bb-gpu", "az-gpu", "custom"}:
-        raise ValueError(
-            "loc must be 'bb-cpu', 'bb-gpu', 'az-gpu', or 'custom'."
-        )
+        raise ValueError("loc must be 'bb-cpu', 'bb-gpu', 'az-gpu', or 'custom'.")
 
     candidate_dir = Path(candidate_dir)
     candidate_dir.mkdir(parents=True, exist_ok=True)
@@ -100,7 +100,11 @@ def prepare_candidate_settings(
             ctx[key] = repr(ctx[key])
         mesh_dir = candidate_dir.parent / f"meshes_{params.box_len}"
         SHEARCELL_RUNTIME.create_meshes(
-            params.box_len, meshsize=0.01, out_dir=str(mesh_dir)
+            params.box_len,
+            meshsize=0.01,
+            out_dir=str(mesh_dir),
+            t_shear=params.extra["t_shear"],
+            shear_vel=params.extra["shear_vel"],
         )
         ctx.update(
             LOC=loc,
@@ -115,7 +119,9 @@ def prepare_candidate_settings(
                     "stl_path": params.shape.particle_path,
                 }
             ),
-            MESH_METRICS_DICT=json.dumps(get_mesh_metrics(str(mesh_dir / "topwall.stl"))),
+            MESH_METRICS_DICT=json.dumps(
+                get_mesh_metrics(str(mesh_dir / "topwall.stl"))
+            ),
         )
         prepare_case(
             candidate_dir,
@@ -144,7 +150,9 @@ def yield_locus_error(
     """Return mean squared relative error against a target yield locus CSV."""
     target = pd.read_csv(target_yield_locus)
     if {"sigma", "tau"} - set(target.columns):
-        raise ValueError("Target yield locus CSV must contain 'sigma' and 'tau' columns.")
+        raise ValueError(
+            "Target yield locus CSV must contain 'sigma' and 'tau' columns."
+        )
 
     target_sigma = target["sigma"].to_numpy(dtype=float)
     target_tau = target["tau"].to_numpy(dtype=float)
@@ -176,7 +184,9 @@ def wait_for_shearcell_metrics(
         if metrics is not None:
             return metrics
         if timeout is not None and time.monotonic() - started >= timeout:
-            raise TimeoutError(f"Timed out waiting for shearcell results in {candidate_dir}")
+            raise TimeoutError(
+                f"Timed out waiting for shearcell results in {candidate_dir}"
+            )
         time.sleep(poll_interval)
 
 
@@ -226,7 +236,9 @@ def evaluate_candidate(
         tau = np.load(outputs_dir / "shear_stresses.npy")
         return yield_locus_error(target_yield_locus, sigma, tau)
     except Exception as exc:
-        (candidate_dir / "calibration_error.txt").write_text(f"{type(exc).__name__}: {exc}\n")
+        (candidate_dir / "calibration_error.txt").write_text(
+            f"{type(exc).__name__}: {exc}\n"
+        )
         return float(penalty)
 
 

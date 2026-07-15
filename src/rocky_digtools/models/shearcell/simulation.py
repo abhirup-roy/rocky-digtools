@@ -104,6 +104,7 @@ class Settings:
 
     def __post_init__(self):
         self.p_radius = normalise_radius(self.p_radius)
+        generate_mesh = self.mesh_dir is None
         if self.mesh_dir is None:
             self.mesh_dir = (
                 pathlib.Path(self.project_dir).parent
@@ -112,10 +113,12 @@ class Settings:
         else:
             self.mesh_dir = pathlib.Path(self.mesh_dir)
 
-        if not self.mesh_dir.exists():
+        if generate_mesh or not self.mesh_dir.exists():
             create_meshes(
                 size=self.particle_box_len,
                 out_dir=self.mesh_dir,
+                t_shear=self.t_shear,
+                shear_vel=self.shear_vel,
             )
 
         if not self.plots_dir:
