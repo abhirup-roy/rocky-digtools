@@ -99,10 +99,9 @@ def prepare_candidate_settings(
         for key in ("NORMAL_MODEL", "TANG_MODEL", "ROLLING_MODEL", "NEIGHBOUR_SEARCH"):
             ctx[key] = repr(ctx[key])
         mesh_dir = candidate_dir.parent / f"meshes_{params.box_len}"
-        if not mesh_dir.exists():
-            SHEARCELL_RUNTIME.create_meshes(
-                params.box_len, meshsize=0.01, out_dir=str(mesh_dir)
-            )
+        SHEARCELL_RUNTIME.create_meshes(
+            params.box_len, meshsize=0.01, out_dir=str(mesh_dir)
+        )
         ctx.update(
             LOC=loc,
             SHAPES_MODULE_PATH=shapes_module_path,

@@ -1,3 +1,4 @@
+import fcntl
 import os
 import pathlib
 
@@ -344,8 +345,17 @@ def create_meshes(
         box_width=size,
         mesh_size=meshsize,
         save_dir=str(out_dir.resolve()),
-        run=True,
+        run=False,
     )
+    with (out_dir / ".create_meshes.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not all(
+            (out_dir / filename).is_file()
+            for filename in ("topwall.stl", "bottomwall.stl", "insert.stl")
+        ):
+            ppm.gen_topwall(gui=False)
+            ppm.gen_bottomwall(gui=False)
+            ppm.gen_insert(gui=False)
 
     return ppm
 
