@@ -123,6 +123,21 @@ def postprocess(
 
     np.save(os.path.join(outputs_dir, "shear_stresses.npy"), tau_arr)
 
+    result_path = os.path.join(sigma_dir, "result.json")
+    temp_path = result_path + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "sigma": float(sigma_arr[sigma_idx]),
+                "sigma_idx": int(sigma_idx),
+                "tau": float(tau_avg),
+            },
+            f,
+        )
+    os.replace(temp_path, result_path)
+
+    return tau_avg
+
 
 def _regression_line(sigma: np.ndarray, tau: np.ndarray):
     """

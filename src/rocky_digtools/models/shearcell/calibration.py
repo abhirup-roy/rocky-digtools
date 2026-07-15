@@ -125,6 +125,8 @@ def prepare_candidate_settings(
             SHEARCELL_RUNTIME,
             load_template(SHEARCELL_RUNTIME, None),
         )
+        worker_script = Path(__file__).parent / "templates" / "script_newcases.py"
+        (candidate_dir / worker_script.name).write_text(worker_script.read_text())
         return candidate_dir / SHEARCELL_RUNTIME.script_filename
 
     render_pyrocky_script(candidate_dir, ctx, SHEARCELL_RUNTIME)

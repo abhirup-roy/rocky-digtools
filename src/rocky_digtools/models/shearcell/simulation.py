@@ -1217,6 +1217,7 @@ def aggregate_results(
         raise ValueError("At least three matching shear stress points are required.")
     if not np.isfinite(sigma).all() or not np.isfinite(tau).all():
         return None
+    np.save(outputs_dir / "shear_stresses.npy", tau)
 
     if (result := _regression_line(sigma, tau)) is not None:
         method = "regression_line"
