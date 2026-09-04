@@ -159,6 +159,7 @@ class RockyScheduler:
             ntasks=1,
             gres=f"gpu:{ngpus}",
             qos="bbgpu",
+            cpus_per_gpu=4,
             account=account,
             commands=_BEAR_COMMANDS,
             **kwargs,
@@ -174,7 +175,7 @@ class RockyScheduler:
             gres=f"gpu:{ngpus}",
             partition="gpu",
             commands=_AZ_COMMANDS,
-            cpus_per_gpu=1,
+            cpus_per_gpu=4,
             **kwargs,
         )
 
