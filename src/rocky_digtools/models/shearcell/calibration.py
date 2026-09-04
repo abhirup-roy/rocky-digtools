@@ -26,6 +26,13 @@ PENALTY_ERROR = 1.0e30
 # Field name -> nested JSON key path, shared with the DOE engine.
 _FIELD_PATHS = field_paths(SHEARCELL_SCHEMA)
 
+# A bare contact-property name applies one ACCES value to both PP and PW.
+_SHARED_PARAMETER_PATHS = {
+    name.removesuffix("_pp"): (path, _FIELD_PATHS[f"{name.removesuffix('_pp')}_pw"])
+    for name, path in _FIELD_PATHS.items()
+    if name.endswith("_pp") and f"{name.removesuffix('_pp')}_pw" in _FIELD_PATHS
+}
+
 
 def _set_nested(data: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
     target = data
@@ -51,9 +58,13 @@ def _with_overrides(
 ) -> dict[str, Any]:
     config = copy.deepcopy(base_config)
     for name, value in parameter_values.items():
-        if name not in _FIELD_PATHS:
+        if name in _SHARED_PARAMETER_PATHS:
+            for path in _SHARED_PARAMETER_PATHS[name]:
+                _set_nested(config, path, value)
+        elif name in _FIELD_PATHS:
+            _set_nested(config, _FIELD_PATHS[name], value)
+        else:
             raise ValueError(f"Unsupported shearcell calibration parameter: {name}")
-        _set_nested(config, _FIELD_PATHS[name], value)
     _reject_lists(config)
     return config
 
@@ -260,7 +271,7 @@ def _normalise_free_parameters(
     sigmas = []
     for name in names:
         spec = free_parameters[name]
-        if name not in _FIELD_PATHS:
+        if name not in _FIELD_PATHS and name not in _SHARED_PARAMETER_PATHS:
             raise ValueError(f"Unsupported shearcell calibration parameter: {name}")
         if "min" not in spec or "max" not in spec:
             raise ValueError(f"Free parameter {name!r} must define 'min' and 'max'.")
