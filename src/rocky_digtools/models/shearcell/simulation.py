@@ -83,6 +83,7 @@ class Settings:
     neighbour_search: Literal["BVH", "RegularGrid", "SparseGrid"] = "BVH"
     processor: Literal["CPU", "GPU", "MULTI_GPU"] = "GPU"
     loc: str = "az-gpu"  # SLURM cluster preset
+    shear_run_days: int = 5
     t_fill: float = 0.5  # constant fill time for shear template
 
     mesh_dir: Optional[str | pathlib.Path] = None
@@ -252,6 +253,10 @@ class Settings:
             errors.append(f"'n_shear_points' must be >= 1, got {self.n_shear_points}.")
         if self.n_procs < 1:
             errors.append(f"'n_procs' must be >= 1, got {self.n_procs}.")
+        if self.shear_run_days < 1:
+            errors.append(
+                f"'shear_run_days' must be >= 1, got {self.shear_run_days}."
+            )
 
         valid_shapes = {"sphere", "polyhedron", "sphero_cylinder", "custom_polyhedron"}
         if self.shape_name not in valid_shapes:
@@ -878,10 +883,11 @@ class ShearCellSimulation(PyrockySimulation):
                 header_common + "#SBATCH --ntasks=1\n"
                 "#SBATCH --gres=gpu:1\n"
                 "#SBATCH --qos=bbgpu\n"
+                "#SBATCH --cpus-per-task=4\n"
             )
         elif p.loc == "az-gpu":
             header = (
-                header_common + "#SBATCH --cpus-per-task=1\n"
+                header_common + "#SBATCH --cpus-per-task=4\n"
                 "#SBATCH --gpus=1\n"
                 "#SBATCH --gpus-per-task=1\n"
                 "#SBATCH -p long-gpu\n"
@@ -977,7 +983,9 @@ class ShearCellSimulation(PyrockySimulation):
         """
         tau_pre = self.execute_preshear(adaptive_ts=adaptive_ts)
         case_dirs = self.create_new_cases()
-        script_path = self.slurm_job(submit=submit_array)
+        script_path = self.slurm_job(
+            n_days=self.settings.shear_run_days, submit=submit_array
+        )
 
         return {
             "tau_pre": tau_pre,

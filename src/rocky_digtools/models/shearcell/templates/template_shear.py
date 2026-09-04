@@ -51,7 +51,6 @@ outputs_dir: str = os.path.join(
 if not os.path.exists(outputs_dir):
     os.makedirs(outputs_dir, exist_ok=True)
 
-# For pyrocky API TODO: Add pyrocky implementation
 # bb_rocky_path = '/rds/bear-apps/2023a/EL8-ice/software/ANSYS_Rocky/2024R2.0/bin/Rocky'
 # vm_rocky_path = '/home/rocky-vm/ansys_inc/v242/rocky/bin/Rocky'
 
@@ -1104,13 +1103,14 @@ Rocky --script "$script_file" --headless >> rocky.log
 """
     elif LOC == 'az-gpu':
         slurm_script = f"""#!/bin/bash
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-gpu=4
 #SBATCH --array=1-{n_array}
 #SBATCH --time={n_days}-0
 #SBATCH --gpus=1
 #SBATCH --gpus-per-task=1
 #SBATCH --job-name={job_name}
 #SBATCH -p long-gpu
+#SBATCH --constraint="[volta|ampere|hopper]"
 
 set -e
 
@@ -1210,5 +1210,5 @@ create_new_cases()
 slurm_job(
     job_name="parallel_shear",
     n_array=len(script_paths),
-    n_days=5
+    n_days={{ SHEAR_RUN_DAYS }}
 )

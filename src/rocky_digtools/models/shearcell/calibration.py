@@ -84,6 +84,7 @@ def prepare_candidate_settings(
     target: str = "CPU",
     loc: str | None = None,
     backend: str = "pyrocky",
+    shear_run_days: int = 5,
 ) -> Path:
     """Write one shear-cell candidate input and return its path."""
     if backend not in {"pyrocky", "rocky_prepost"}:
@@ -95,6 +96,8 @@ def prepare_candidate_settings(
         loc = "bb-cpu" if target == "CPU" else "az-gpu"
     if loc not in {"bb-cpu", "bb-gpu", "az-gpu", "custom"}:
         raise ValueError("loc must be 'bb-cpu', 'bb-gpu', 'az-gpu', or 'custom'.")
+    if isinstance(shear_run_days, bool) or not isinstance(shear_run_days, int) or shear_run_days < 1:
+        raise ValueError("shear_run_days must be a positive integer.")
 
     candidate_dir = Path(candidate_dir)
     candidate_dir.mkdir(parents=True, exist_ok=True)
@@ -119,6 +122,7 @@ def prepare_candidate_settings(
         )
         ctx.update(
             LOC=loc,
+            SHEAR_RUN_DAYS=shear_run_days,
             SHAPES_MODULE_PATH=shapes_module_path,
             SHAPE_DICT=json.dumps(
                 {
@@ -149,6 +153,7 @@ def prepare_candidate_settings(
     settings_path = candidate_dir / "settings.json"
     settings = json.loads(settings_path.read_text())
     settings["loc"] = loc
+    settings["shear_run_days"] = shear_run_days
     settings_path.write_text(json.dumps(settings, indent=4))
     return settings_path
 
@@ -213,6 +218,7 @@ def evaluate_candidate(
     target: str = "CPU",
     loc: str | None = None,
     backend: str = "pyrocky",
+    shear_run_days: int = 5,
 ) -> float:
     """Run one ACCES candidate and return its scalar calibration error."""
     candidate_dir = Path(work_dir) / f"candidate_{int(access_id)}"
@@ -220,7 +226,13 @@ def evaluate_candidate(
     try:
         values = parameters["value"].to_dict()
         input_path = prepare_candidate_settings(
-            base_json, candidate_dir, values, target=target, loc=loc, backend=backend
+            base_json,
+            candidate_dir,
+            values,
+            target=target,
+            loc=loc,
+            backend=backend,
+            shear_run_days=shear_run_days,
         )
 
         if backend == "rocky_prepost":
@@ -296,6 +308,7 @@ def _render_access_script(
     target: str = "CPU",
     loc: str | None = None,
     backend: str = "pyrocky",
+    shear_run_days: int = 5,
 ) -> str:
     names, minimums, maximums, values, sigmas = _normalise_free_parameters(
         free_parameters
@@ -325,6 +338,7 @@ error = evaluate_candidate(
     target={target.upper()!r},
     loc={loc!r},
     backend={backend!r},
+    shear_run_days={shear_run_days!r},
     poll_interval={float(poll_interval)!r},
     timeout={timeout!r},
 )
@@ -345,11 +359,13 @@ def launch_calibration(
     target: str = "CPU",
     loc: str | None = None,
     backend: str | None = None,
+    shear_run_days: int = 5,
 ):
     """Launch ACCES calibration for shear-cell yield-locus matching.
 
     ``target`` selects Rocky's processor; ``loc`` selects the matching
-    shear-point SLURM preset. ``backend`` selects the ``"pyrocky"`` case
+    shear-point SLURM preset; and ``shear_run_days`` sets each shear-array
+    task's wall-time limit. ``backend`` selects the ``"pyrocky"`` case
     runner or the ``"rocky_prepost"`` Jinja script, defaulting to the
     package backend. If omitted, ``loc`` defaults to ``"bb-cpu"`` for CPU
     and ``"az-gpu"`` for GPU targets.
@@ -383,6 +399,7 @@ def launch_calibration(
             target=target,
             loc=loc,
             backend=backend,
+            shear_run_days=shear_run_days,
             poll_interval=poll_interval,
             timeout=timeout,
         )
