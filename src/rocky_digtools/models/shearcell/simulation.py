@@ -36,8 +36,6 @@ def _phase_times(
     settle_end = fill_end + t_settle
     compression_end = settle_end + t_compression
     return fill_end, settle_end, compression_end, compression_end + t_shear
-
-
 def _target_force(sigma: float, area: float, wall_mass: float) -> float:
     """Additional downward force needed for a target normal stress (N)."""
     return sigma * area - wall_mass * 9.81
@@ -479,9 +477,6 @@ class ShearCellSimulation(PyrockySimulation):
         top_wall.SetGravityCenter(mesh_metrics["cog"])
         top_wall.SetBoundaryMass(mesh_metrics["volume"] * 2700.0)
 
-        if insert:
-            top_wall.SetEnableTime(self.settings.t_fill + 0.25)
-
         bottom_wall_path = mesh_dir / "bottomwall.stl"
         bottom_wall = self._study.ImportWall(
             str(bottom_wall_path), import_scale=1.0, convert_yz=False
@@ -515,7 +510,7 @@ class ShearCellSimulation(PyrockySimulation):
             [(-box / 2) * 1.5, (-box / 2) * 1.5, (-box / 2) * 1.5]
         )
         domain_settings.SetCoordinateLimitsMaxValues(
-            [(box / 2) * 1.5, (box / 2) * 1.5, (box / 2) * 1.5]
+            [(box / 2) * 1.5, box * 1.5, (box / 2) * 1.5]
         )
 
         domain_settings.SetCartesianPeriodicDirections("XZ")

@@ -63,7 +63,6 @@ class ParallelPlateMesh:
         save_dir: str = "meshes",
         run: bool = True,
         bottom_vanes: bool = True,
-        top_mvt: bool = False,
         best_mesh_length: bool = True,
         vane_thickness: float = 1e-5,
         t_shear: float = 5.0,
@@ -73,11 +72,14 @@ class ParallelPlateMesh:
         self.mesh_size = mesh_size
         self.h_vane_frac = h_vane_frac
         self.h_vane = box_width * h_vane_frac
-        self.plate_length = plate_length
+        # Keep the fill floor fixed while starting the top teeth above the inlet.
+        self.bottom_wall_y = -box_width / 2
+        self.top_wall_y = box_width
+        self.inlet_y = box_width * 5 / 8
+        self.plate_length: int | float = plate_length
         self.save_dir = save_dir
         self.bottom_vanes = bottom_vanes
         self.l_vanes_frac = l_vanes_frac
-        self.top_mvt = top_mvt
         self.vane_thickness = vane_thickness
 
         if best_mesh_length:
@@ -102,14 +104,9 @@ class ParallelPlateMesh:
             DEFAULT: False
         """
         # Determine z-interval for the top wall based on top_mvt
-        if self.top_mvt:
-            # Moving top: wall spans from z = box_width/2 - plate_length to z = box_width/2
-            z1 = self.box_width / 2.0
-            z0 = z1 - self.plate_length
-        else:
-            # Centered top: wall spans from -plate_length/2 to +plate_length/2
-            z0 = -self.plate_length / 2.0
-            z1 = +self.plate_length / 2.0
+        # Centered top: wall spans from -plate_length/2 to +plate_length/2
+        z0 = -self.box_width / 2.0
+        z1 = +self.box_width / 2.0
         # Geometry parameters
         box_w = self.box_width
         l_vane = self.l_vanes_frac * self.box_width
@@ -121,7 +118,7 @@ class ParallelPlateMesh:
 
         plane = gmsh.model.occ.addBox(
             x=-self.box_width / 2,
-            y=self.box_width / 2,
+            y=self.top_wall_y,
             z=z0,
             dx=box_w,
             dy=5e-4,
@@ -135,7 +132,7 @@ class ParallelPlateMesh:
         for z in vane_range:
             vane = gmsh.model.occ.addBox(
                 x=-box_w / 2,
-                y=self.box_width / 2,
+                y=self.top_wall_y,
                 z=z,
                 dx=box_w,
                 dy=-self.h_vane,
@@ -179,26 +176,26 @@ class ParallelPlateMesh:
 
         p1 = gmsh.model.geo.addPoint(
             self.box_width / 2,
-            -self.box_width / 2,
+            self.bottom_wall_y,
             endpoints[0],
             meshSize=self.mesh_size,
         )
         p2 = gmsh.model.geo.addPoint(
             -self.box_width / 2,
-            -self.box_width / 2,
+            self.bottom_wall_y,
             endpoints[0],
             meshSize=self.mesh_size,
         )
         p3 = gmsh.model.geo.addPoint(
             -self.box_width / 2,
-            -self.box_width / 2,
+            self.bottom_wall_y,
             endpoints[1],
             meshSize=self.mesh_size,
         )
 
         p4 = gmsh.model.geo.addPoint(
             self.box_width / 2,
-            -self.box_width / 2,
+            self.bottom_wall_y,
             endpoints[1],
             meshSize=self.mesh_size,
         )
@@ -220,25 +217,25 @@ class ParallelPlateMesh:
             for length_coord in vane_range:
                 vane_p1 = gmsh.model.geo.addPoint(
                     self.box_width / 2,
-                    -self.box_width / 2,
+                    self.bottom_wall_y,
                     length_coord,
                     meshSize=self.mesh_size,
                 )
                 vane_p2 = gmsh.model.geo.addPoint(
                     self.box_width / 2,
-                    -self.box_width / 2 + self.h_vane,
+                    self.bottom_wall_y + self.h_vane,
                     length_coord,
                     meshSize=self.mesh_size,
                 )
                 vane_p3 = gmsh.model.geo.addPoint(
                     -self.box_width / 2,
-                    -self.box_width / 2 + self.h_vane,
+                    self.bottom_wall_y + self.h_vane,
                     length_coord,
                     meshSize=self.mesh_size,
                 )
                 vane_p4 = gmsh.model.geo.addPoint(
                     -self.box_width / 2,
-                    -self.box_width / 2,
+                    self.bottom_wall_y,
                     length_coord,
                     meshSize=self.mesh_size,
                 )
@@ -276,9 +273,8 @@ class ParallelPlateMesh:
         gmsh.initialize()
         gmsh.model.add("insert")
 
-        # Keep the inlet centered in the clearance between the top wall
-        # (y = box_width / 2) and the domain ceiling (y = 3 * box_width / 4).
-        inlet_y = self.box_width * 5 / 8
+        # The inlet stays above the fill box and below the raised top-wall teeth.
+        inlet_y = self.inlet_y
 
         p1 = gmsh.model.geo.addPoint(
             self.box_width / 2,

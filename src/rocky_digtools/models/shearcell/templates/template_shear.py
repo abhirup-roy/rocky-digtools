@@ -231,9 +231,6 @@ def import_meshes(
     top_wall.SetGravityCenter(cog_top)
     top_wall.SetBoundaryMass(vol_top * 2700)  # Assuming wall density of 2700 kg/m3
 
-    if INSERTIONS:
-        top_wall.SetEnableTime(T_FILL + 0.25)
-
     bottom_wall = study.ImportWall(
         bottom_path_abs,
         import_scale=1.0,
@@ -260,19 +257,19 @@ def import_meshes(
         )[0]
 
         box_len = params_dict['particle_box_len']
-        top_wall_y = box_len / 2
-        domain_ceiling_y = box_len * 3 / 4
+        fill_ceiling_y = box_len / 2
+        top_vane_tip_y = box_len * 0.9
         radii = params_dict['p_radius']
         max_radius = max(radii) if isinstance(radii, dict) else radii
         min_clearance = 2 * max_radius
         inlet_y = np.asarray(insert_plane.GetVertices()).mean(axis=0)[1]
-        clearance = min(inlet_y - top_wall_y, domain_ceiling_y - inlet_y)
+        clearance = min(inlet_y - fill_ceiling_y, top_vane_tip_y - inlet_y)
 
         if clearance < min_clearance:
-            safe_inlet_y = (top_wall_y + domain_ceiling_y) / 2
-            if safe_inlet_y - top_wall_y < min_clearance:
+            safe_inlet_y = (fill_ceiling_y + top_vane_tip_y) / 2
+            if safe_inlet_y - fill_ceiling_y < min_clearance:
                 raise ValueError(
-                    'Particle diameter exceeds the inlet clearance above the top wall.'
+                    'Particle diameter exceeds the clearance below the top-wall vanes.'
                 )
             insert_plane.SetTranslation([0, safe_inlet_y - inlet_y, 0])
 
@@ -323,7 +320,7 @@ def specify_materials():
     wall_mat = material_collection.AddSolidMaterial()
     wall_mat.SetName("Wall Material")
     wall_mat.SetDensity(2700, 'kg/m3')
-    wall_mat.SetYoungsModulus(5e6, 'Pa')
+    wall_mat.SetYoungsModulus(1e9, 'Pa')
     wall_mat.SetPoissonRatio(0.3)
     wall_mat.SetUseBulkDensity(False)
 
@@ -530,7 +527,7 @@ def animate_walls():
     freebody = freebody_motion.GetTypeObject()
     freebody.SetFreeMotionDirection('y')
     if INSERTIONS:
-        freebody_motion.SetStartTime(T_FILL + 0.25)
+        freebody_motion.SetStartTime(T_FILL)
     else:
         freebody_motion.SetStartTime(0)
 
@@ -618,7 +615,7 @@ def config_domain():
     ])
     domain_settings.SetCoordinateLimitsMaxValues([
         (particle_box_len / 2) * 1.5,
-        (particle_box_len / 2) * 1.5,
+        particle_box_len * 1.5,
         (particle_box_len / 2) * 1.5
     ])
 
