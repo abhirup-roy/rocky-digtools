@@ -110,7 +110,7 @@ def script_context_from_params(
     Returns:
         Dictionary of template variables for script rendering.
     """
-    rolling_fric = params.fric_rolling_pp if params.rolling != "none" else 0
+    rolling_fric = params.fric_rolling if params.rolling != "none" else 0
 
     ctx = {
         "RADIUS_P": params.radius,

@@ -30,9 +30,9 @@ _COMMON_HEAD_FIELDS = (
     "density",
     "poisson",
     "youngmod",
+    "fric_rolling",
     "fric_dyn_pp",
     "fric_stat_pp",
-    "fric_rolling_pp",
     "cor_pp",
     "tang_stiff_ratio_pp",
     "surf_en_pp",
@@ -51,9 +51,9 @@ _COMMON_FIELD_PATHS: dict[str, tuple[str, ...]] = {
     "density": ("particle_properties", "density"),
     "poisson": ("particle_properties", "poisson"),
     "youngmod": ("particle_properties", "youngmod"),
+    "fric_rolling": ("particle_properties", "fric_rolling"),
     "fric_dyn_pp": ("interactions", "pp", "fric_dyn"),
     "fric_stat_pp": ("interactions", "pp", "fric_stat"),
-    "fric_rolling_pp": ("interactions", "pp", "fric_rolling"),
     "cor_pp": ("interactions", "pp", "cor"),
     "tang_stiff_ratio_pp": ("interactions", "pp", "tang_stiff_ratio"),
     "surf_en_pp": ("interactions", "pp", "surf_en"),
@@ -110,9 +110,9 @@ COMMON_RANGES: dict[str, tuple[float, Optional[float]]] = {
     "density": (0, None),
     "poisson": (0, 0.5),
     "youngmod": (0, None),
+    "fric_rolling": (0, None),
     "fric_dyn_pp": (0, None),
     "fric_stat_pp": (0, None),
-    "fric_rolling_pp": (0, None),
     "cor_pp": (0, 1),
     "tang_stiff_ratio_pp": (0, None),
     "surf_en_pp": (0, None),
@@ -189,7 +189,7 @@ class SimParams:
         youngmod: Young's modulus in Pa.
         fric_dyn_pp: Dynamic friction coefficient (particle-particle).
         fric_stat_pp: Static friction coefficient (particle-particle).
-        fric_rolling_pp: Rolling friction coefficient (particle-particle).
+        fric_rolling: Particle rolling resistance coefficient.
         cor_pp: Coefficient of restitution (particle-particle).
         fric_dyn_pw: Dynamic friction coefficient (particle-wall).
         fric_stat_pw: Static friction coefficient (particle-wall).
@@ -211,9 +211,9 @@ class SimParams:
     density: float
     poisson: float
     youngmod: float
+    fric_rolling: float
     fric_dyn_pp: float
     fric_stat_pp: float
-    fric_rolling_pp: float
     cor_pp: float
     fric_dyn_pw: float
     fric_stat_pw: float

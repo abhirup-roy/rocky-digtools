@@ -27,6 +27,7 @@ _COMMON_KEY_MAP = {
     "density": "DENSITY_P",
     "poisson": "POISSON_P",
     "youngmod": "YOUNGMOD_P",
+    "fric_rolling": "ROLLING_FRICTION",
     "fric_dyn_pp": "DYNAMIC_FRICTION_PP",
     "fric_stat_pp": "STATIC_FRICTION_PP",
     "cor_pp": "COR_PP",
@@ -204,9 +205,7 @@ def launch_ofat(
             }
         )
 
-        if exp_dict["rolling"] != "none":
-            script_context["ROLLING_FRICTION"] = exp_dict["fric_rolling_pp"]
-        else:
+        if exp_dict["rolling"] == "none":
             script_context["ROLLING_FRICTION"] = 0
 
         prepare_case(

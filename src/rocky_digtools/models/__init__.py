@@ -173,6 +173,7 @@ class PyrockySimulation(_abc.ABC):
         physics.SetNormalForceModel(self.settings.normal_force_model)
         physics.SetTangentialForceModel(self.settings.tangential_force_model)
         physics.SetAdhesionModel(self.settings.adhesion_model)
+        physics.SetRollingResistanceModel(self.settings.rolling_model)
 
         physics.SetGravityXDirection(0)
         physics.SetGravityYDirection(-9.81)

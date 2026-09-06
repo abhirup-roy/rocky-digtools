@@ -99,10 +99,13 @@ def get_params(params):
     if 'rolling_model' in params_dict.keys():
         assert params_dict['rolling_model'] in [
             'type_1', 'type_3', 'none', 'custom']
-        
-        if 'rolling_friction' not in params_dict \
-        and params_dict['rolling_model'] == 'none':
+
+        if params_dict['rolling_model'] == 'none':
             params_dict['rolling_friction'] = 0.
+        elif 'rolling_friction' not in params_dict:
+            raise ValueError(
+                "rolling_friction is required when rolling_model is enabled."
+            )
 
     if 'normal_force_model' in params_dict.keys():
         assert params_dict['normal_force_model'] in [
@@ -287,6 +290,7 @@ def simulation_physics():
     physics.SetNormalForceModel(params_dict['normal_force_model'])
     physics.SetTangentialForceModel(params_dict['tangential_force_model'])
     physics.SetAdhesionModel(params_dict['adhesion']['adhesion_model'])
+    physics.SetRollingResistanceModel(params_dict['rolling_model'])
 
     # Set gravity
     physics.SetGravityXDirection(0)
@@ -360,11 +364,6 @@ def material_interactions():
     pp_interaction.SetDynamicFriction(
         params_dict['pp_dynamic_friction']
     )
-    if params_dict['rolling_model'] != 'none':
-        pp_interaction.SetRollingFriction(
-            params_dict['rolling_friction']
-        )
-
     # Set the contact laws for the particle-wall interaction
     pw_interaction.SetRestitutionCoefficient(
         params_dict['pw_cor']
@@ -375,11 +374,6 @@ def material_interactions():
     pw_interaction.SetDynamicFriction(
         params_dict['pw_dynamic_friction']
     )
-    if params_dict['rolling_model'] != 'none':
-        pw_interaction.SetRollingFriction(
-            params_dict['pw_rolling_friction']
-        )
-
     if params_dict['pp_tangential_stiffness_ratio'] is not None:
         pp_interaction.SetTangentialStiffnessRatio(
             params_dict['pp_tangential_stiffness_ratio']
@@ -1155,6 +1149,7 @@ params = {
     "p_youngmod": {{YOUNGMOD_P}},
     "p_poisson": {{POISSON_P}},
     "rolling_model": {{ROLLING_MODEL}},
+    "rolling_friction": {{ROLLING_FRICTION}},
     "pp_dynamic_friction": {{DYNAMIC_FRICTION_PP}},
     "pp_static_friction": {{STATIC_FRICTION_PP}},
     "pp_cor": {{COR_PP}},
