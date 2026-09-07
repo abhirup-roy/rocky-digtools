@@ -195,21 +195,20 @@ def load_meshes(insert=True) -> None:
 
     # Load Top Wall
     top_wall = study.ImportWall(
-        compr_wall1_stl_path, import_scale=1.1, convert_yz=True
+        compr_wall1_stl_path, import_scale=1.1, convert_yz=False
     )[0]
     top_wall.SetName("Top Wall")
     top_wall.SetBoundaryMass(1e-6)
-    top_wall.SetTranslation([-PARTICLE_BOX_LEN / 2, 0, 0])
+    top_wall.SetTranslation([0, PARTICLE_BOX_LEN / 2 + 1e-6, 0])
 
     top_wall.SetEnableTime(T_SETTLE + 0.5)
 
     # Load bottom wall with a slight offset
     # to avoid overlap wth periodic boundary
     bottom_wall = study.ImportWall(
-        compr_wall2_stl_path, import_scale=1.1, convert_yz=True
+        compr_wall2_stl_path, import_scale=1.1, convert_yz=False
     )[0]
     bottom_wall.SetName("Bottom Wall")
-    bottom_wall.SetTranslation([PARTICLE_BOX_LEN / 2 + 1e-6, 0, 0])
 
     if insert:
         insert_stl_path = str(MESHDIR / "insert.stl")
@@ -220,8 +219,9 @@ def load_meshes(insert=True) -> None:
 
         insert_inlet.SetName("Insert Inlet")
         insert_inlet.SetPivotPoint([0, 0, 0])
-        insert_inlet.SetOrientationFromAngles(rotation=[0, 0, -90])
-        insert_inlet.SetTranslation([0.45 * PARTICLE_BOX_LEN / 2, 0, 0])
+        current_height = insert_inlet.GetVertices().mean(axis=0)[1]
+        target_height = (PARTICLE_BOX_LEN / 2) * 0.99
+        insert_inlet.SetTranslation([0, float(target_height - current_height), 0])
         insert_inlet.SetInvertNormal(True)
 
 
@@ -414,8 +414,8 @@ def sim_physics() -> None:
     physics.SetAdhesionModel(ADHESION_MODEL)
 
     # Gravity
-    physics.SetGravityXDirection(-9.81)  # X-positive is upwards (don't ask)
-    physics.SetGravityYDirection(0)
+    physics.SetGravityXDirection(0)
+    physics.SetGravityYDirection(-9.81)
     physics.SetGravityZDirection(0)
 
 
@@ -472,7 +472,7 @@ def move_top_wall():
     drop_wall_motion = motions.New()
     drop_wall_motion.SetType("Free Body Translation")
     free_body = drop_wall_motion.GetTypeObject()
-    free_body.SetFreeMotionDirection("x")
+    free_body.SetFreeMotionDirection("y")
     drop_wall_motion.SetStartTime(T_FILL + T_SETTLE)
 
     # Start compression
@@ -481,7 +481,7 @@ def move_top_wall():
     compr_motion = motions.New()
     compr_motion.SetType("Additional Force")
     add_force = compr_motion.GetTypeObject()
-    add_force.SetForceValue([pressure, 0, 0], "N")
+    add_force.SetForceValue([0, pressure, 0], "N")
     compr_motion.SetStartTime(T_FILL + T_SETTLE + 0.1)
     compr_motion.SetStopTime(T_FILL + T_SETTLE + T_COMPRESSION)
 
@@ -518,13 +518,13 @@ def set_domain_settings() -> None:
     )
 
     # Set the periodic limits for the domain
-    # X direction does not matter as walls are there
-    domain_settings.SetCartesianPeriodicDirections("YZ")
+    # Y direction does not matter as walls are there
+    domain_settings.SetCartesianPeriodicDirections("XZ")
     domain_settings.SetPeriodicLimitsMinCoordinates(
-        [-1e6, -PARTICLE_BOX_LEN / 2, -PARTICLE_BOX_LEN / 2]
+        [-PARTICLE_BOX_LEN / 2, -1e6, -PARTICLE_BOX_LEN / 2]
     )
     domain_settings.SetPeriodicLimitsMaxCoordinates(
-        [1e6, PARTICLE_BOX_LEN / 2, PARTICLE_BOX_LEN / 2]
+        [PARTICLE_BOX_LEN / 2, 1e6, PARTICLE_BOX_LEN / 2]
     )
 
 
