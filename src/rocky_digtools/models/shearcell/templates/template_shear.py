@@ -254,7 +254,7 @@ def import_meshes(
 
         insert_plane = study.ImportSurface(
             insert_path,
-            import_scale=1.0,
+            import_scale=0.98,
             convert_yz=False
         )[0]
 

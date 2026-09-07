@@ -449,7 +449,7 @@ class UniaxialCompressionSimulation(PyrockySimulation):
 
         insert_stl_path = (mesh_dir / "insert.stl").resolve()
         insert_inlet = self._study.ImportSurface(
-            str(insert_stl_path), import_scale=1.0, convert_yz=True
+            str(insert_stl_path), import_scale=0.98, convert_yz=True
         )[0]
         insert_inlet.SetName("Insert Inlet")  # <-- set explicit name
         insert_inlet.SetPivotPoint([0, 0, 0])

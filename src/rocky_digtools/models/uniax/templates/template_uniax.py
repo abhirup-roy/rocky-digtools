@@ -214,7 +214,7 @@ def load_meshes(insert=True) -> None:
         insert_stl_path = str(MESHDIR / "insert.stl")
         global insert_inlet
         insert_inlet = study.ImportSurface(
-            insert_stl_path, import_scale=1.0, convert_yz=True
+            insert_stl_path, import_scale=0.98, convert_yz=True
         )[0]
 
         insert_inlet.SetName("Insert Inlet")

@@ -494,7 +494,7 @@ class ShearCellSimulation(PyrockySimulation):
         if insert:
             insert_path = (mesh_dir / "insert.stl").resolve()
             insert_inlet = self._study.ImportSurface(
-                str(insert_path), import_scale=1.0, convert_yz=False
+                str(insert_path), import_scale=0.98, convert_yz=False
             )[0]
             insert_inlet.SetName("Insert Inlet")
             self._mesh["insert_inlet"] = insert_inlet
