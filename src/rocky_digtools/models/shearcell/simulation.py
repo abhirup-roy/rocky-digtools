@@ -9,14 +9,12 @@ Ansys Rocky.
 import os
 import json
 import glob
-import sqlite3
 import pathlib
 import subprocess
 from typing import Literal, Optional, Any
 from dataclasses import dataclass, asdict, fields, MISSING
 
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import signal, optimize
 
@@ -419,8 +417,8 @@ class ShearCellSimulation(PyrockySimulation):
        (:meth:`slurm_job`); each array task calls
        :func:`run_shear_point`.
     3. **Aggregate** — once every array task has written its shear stress,
-       :func:`aggregate_results` fits the Mohr circles and dumps the
-       flow-function metrics to a SQLite database.
+       :func:`aggregate_results` fits the Mohr circles and computes the
+       flow-function metrics.
 
     Args:
         settings: Simulation parameters as a :class:`Settings` instance.
@@ -1037,7 +1035,7 @@ def run_shear_point(case_dir: str, rocky: Any = None) -> float:
         solver.SetNumberOfProcessors(n_cpus)
 
     if (not study.HasResults()) or study.CanResumeSimulation():
-        study.StartSimulation(skip_summary=True)
+        study.StartSimulation(skip_summary=True, delete_results=False)
         while study.IsSimulating():
             study.RefreshResults()
             print(f"Simulation Progress: {study.GetProgress():.2f} %", flush=True)
@@ -1179,22 +1177,19 @@ def _force_fit(sigma: np.ndarray, tau: np.ndarray):
 def aggregate_results(
     project_dir: str | pathlib.Path,
     plot: bool = True,
-    db_path: str | pathlib.Path | None = None,
 ) -> dict:
     """Fit Mohr circles to the collected shear stresses and dump metrics.
 
     Loads ``pyoutputs/sigma.npy`` and ``pyoutputs/shear_stresses.npy`` from
     ``project_dir``; if any shear point is still zero the function returns
     ``None`` (the array job is not done yet).  Otherwise it fits the yield
-    locus (regression line → straight sections → constrained force-fit),
-    plots the Mohr circles, and appends a row to a SQLite database.
+    locus (regression line → straight sections → constrained force-fit)
+    and plots the Mohr circles.
 
     Args:
         project_dir: Directory containing the ``pyoutputs/`` folder and
             ``params.json``.
         plot: If ``True``, save the Mohr-circle figure.  Defaults to ``True``.
-        db_path: SQLite database path.  Defaults to
-            ``<project_dir>/../results.db``.
 
     Returns:
         A dict of computed flow metrics (``ffc``, ``sigma_unc``,
@@ -1327,17 +1322,6 @@ def aggregate_results(
         "phi_eff": float(phi_eff),
         "fit_method": method,
     }
-
-    if db_path is None:
-        db_path = project_dir.parent / "results.db"
-    with open(project_dir / "params.json") as f:
-        params = json.load(f)
-    df = pd.json_normalize(params)
-    df.columns = [col.split(".")[-1] if "." in col else col for col in df.columns]
-    for k, v in metrics.items():
-        df[k] = v
-    with sqlite3.connect(str(db_path)) as conn:
-        df.to_sql("parallel_shear", conn, if_exists="append", index=False)
 
     return metrics
 

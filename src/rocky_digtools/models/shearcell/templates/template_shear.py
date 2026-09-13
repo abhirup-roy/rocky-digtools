@@ -736,11 +736,10 @@ def continue_sim(filename: str):
     project = app.OpenProject(filename)
     study = project.GetStudy()
 
-    if study.CanResumeSimulation():
-        study.ResumeSimulation()
-        project.SaveProject()
+    if not study.CanResumeSimulation():
+        warn("Simulation could not be resumed. Moving to post-processing.")
     else:
-        warn("Simulation cannot be resumed. Moving to post-processing.")
+        study.StartSimulation(delete_results=False)
 
     geometry_collection = study.GetGeometryCollection()
 
