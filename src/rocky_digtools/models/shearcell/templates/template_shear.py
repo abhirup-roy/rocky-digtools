@@ -25,6 +25,36 @@ from typing import Optional
 
 INSERTIONS = True  # Whether to use insertions or not
 T_FILL = 0.5  # Time to fill the box with particles (s)
+N_LOAD_STEPS = 10  # Number of stages in the compression force ramp
+
+
+def phase_times():
+    """Return cumulative fill, settle, compression, and shear end times."""
+    fill_end = T_FILL if INSERTIONS else 0.0
+    settle_end = fill_end + params_dict['t_settle']
+    compression_end = settle_end + params_dict['t_compression']
+    return fill_end, settle_end, compression_end, compression_end + params_dict['t_shear']
+
+
+def target_force(sigma: float, wall_mass: float) -> float:
+    """Additional downward force needed for a target normal stress (N)."""
+    return sigma * params_dict['particle_box_len']**2 - wall_mass * 9.81
+
+
+def load_steps(force: float, t_start: float, t_ramp: float, t_stop: float) -> list:
+    """Split a linear force ramp into constant (start, stop, force) stages.
+
+    The last stage holds the full force until t_stop.
+    """
+    dt = t_ramp / N_LOAD_STEPS
+    return [
+        (
+            t_start + (k - 1) * dt,
+            t_start + k * dt if k < N_LOAD_STEPS else t_stop,
+            force * k / N_LOAD_STEPS,
+        )
+        for k in range(1, N_LOAD_STEPS + 1)
+    ]
 
 
 # Import particle shapes using importlib
@@ -86,7 +116,8 @@ def get_params(params):
         'adhesion', 'particle_box_len', 't_settle',
         't_compression', 'sigma_pre', 'n_shear_points',
         'processor', 'n_procs', 'neighbour_search',
-        't_shear', 'shear_vel', 'shape', 'mesh_metrics'
+        't_shear', 'shear_vel', 'shape', 'mesh_metrics',
+        'top_wall_mass'
     ]
 
     # Find the keys that are not in the list of valid keys
@@ -147,6 +178,16 @@ def get_params(params):
                 "If adhesion_model is 'JKR', 'pp_surface_energy' and 'pw_surface_energy' must be specified."
             assert params_dict['normal_force_model'] == 'damped_hertzian', \
                 "If adhesion_model is 'JKR', normal_force_model must be 'damped_hertzian'."
+
+    # A heavy lid keeps the free-body wall on the bed. By default its weight
+    # gives the lowest shear-point stress, so the additional force stays
+    # downward for every point.
+    if params_dict.get('top_wall_mass') is None:
+        params_dict['top_wall_mass'] = (
+            params_dict['sigma_pre'] / params_dict['n_shear_points']
+            * params_dict['particle_box_len']**2 / 9.81
+        )
+    assert params_dict['top_wall_mass'] > 0, "top_wall_mass must be > 0."
 
     if 'neighbour_search' in params_dict.keys():
         assert params_dict['neighbour_search'] in [
@@ -225,13 +266,17 @@ def import_meshes(
         convert_yz=False)[0]
     top_wall.SetName('Compression Wall 1')
 
-    vol_top = params_dict['mesh_metrics']['volume']
-    cog_top = params_dict['mesh_metrics']['cog']
-    pm_inert_top = params_dict['mesh_metrics']['pmoment_inertia']
+    mesh_metrics = params_dict['mesh_metrics']
+    wall_mass = params_dict['top_wall_mass']
+    # Scale the mesh inertia with the mass so the two stay consistent
+    pm_inert_top = [
+        inertia * wall_mass / mesh_metrics['mass']
+        for inertia in mesh_metrics['pmoment_inertia']
+    ]
 
     top_wall.SetPrincipalMomentOfInertia(pm_inert_top)
-    top_wall.SetGravityCenter(cog_top)
-    top_wall.SetBoundaryMass(vol_top * 2700)  # Assuming wall density of 2700 kg/m3
+    top_wall.SetGravityCenter(mesh_metrics['cog'])
+    top_wall.SetBoundaryMass(wall_mass)
 
     bottom_wall = study.ImportWall(
         bottom_path_abs,
@@ -513,46 +558,31 @@ def animate_walls():
     # )
 
     topwall_motions = topwall_frame.GetMotions()
+    fill_end, settle_end, compression_end, shear_end = phase_times()
 
     # Handling the free body motion
+    # The wall is held until halfway through settling so the poured bed
+    # comes to rest before the wall is lowered onto it
     freebody_motion = topwall_motions.New()
     freebody_motion.SetType('Free Body Translation')
     freebody = freebody_motion.GetTypeObject()
     freebody.SetFreeMotionDirection('y')
-    if INSERTIONS:
-        freebody_motion.SetStartTime(T_FILL)
-    else:
-        freebody_motion.SetStartTime(0)
-
-    freebody_motion.SetStopTime(
-        sum([
-            params_dict['t_settle'],
-            params_dict['t_compression'],
-            params_dict['t_shear']
-        ])
-    )
+    freebody_motion.SetStartTime(fill_end + params_dict['t_settle'] / 2)
+    freebody_motion.SetStopTime(shear_end)
 
     # Compression motion for the top wall
+    # The force ramps up in steps over the first half of the compression
+    # phase, as a step load makes the wall bounce off the bed
     wall_mass = walls[0].GetBoundaryMass()
-    force_magnitude = (params_dict['sigma_pre'] - wall_mass * 9.81) \
-        * params_dict['particle_box_len']**2
-    force_motion = topwall_motions.New()
-    force_motion.SetType('Additional Force')
-
-    add_force = force_motion.GetTypeObject()
-    add_force.SetForceValue([0, -force_magnitude, 0], 'N')
-    if INSERTIONS:
-        force_motion.SetStartTime(T_FILL + 0.35)
-    else:
-        force_motion.SetStartTime(params_dict['t_settle'])
-        
-    force_motion.SetStopTime(
-        sum([
-            params_dict['t_settle'],
-            params_dict['t_compression'],
-            params_dict['t_shear']
-        ])
-    )
+    force_magnitude = target_force(params_dict['sigma_pre'], wall_mass)
+    for t_start, t_stop, force in load_steps(
+            force_magnitude, settle_end, params_dict['t_compression'] / 2, shear_end):
+        force_motion = topwall_motions.New()
+        force_motion.SetType('Additional Force')
+        add_force = force_motion.GetTypeObject()
+        add_force.SetForceValue([0, -force, 0], 'N')
+        force_motion.SetStartTime(t_start)
+        force_motion.SetStopTime(t_stop)
 
     topwall_frame.ApplyTo(walls[0])
 
@@ -569,19 +599,8 @@ def animate_walls():
         'm/s'
     )
 
-    shearing_motion_bottom.SetStartTime(
-        sum([
-            params_dict['t_settle'],
-            params_dict['t_compression']
-        ])
-    )
-    shearing_motion_bottom.SetStopTime(
-        sum([
-            params_dict['t_settle'],
-            params_dict['t_compression'],
-            params_dict['t_shear']
-        ])
-    )
+    shearing_motion_bottom.SetStartTime(compression_end)
+    shearing_motion_bottom.SetStopTime(shear_end)
     bottomwall_frame.ApplyTo(walls[1])
 
 
@@ -694,11 +713,7 @@ def simulate(autotimestep: bool = True, timestep=None) -> None:
     processor = PROCESSOR
     _select_processor(solver, processor)
 
-    runtime = sum([
-        params_dict['t_settle'],
-        params_dict['t_compression'],
-        params_dict['t_shear']
-    ])
+    runtime = phase_times()[-1]
     solver.SetSimulationDuration(runtime, 's')
 
     if not autotimestep:
@@ -886,7 +901,7 @@ def _new_sim_settings(
     release_motion.SetStopTime(t_release)
     sim_time = t_release
 
-    force_magnitude = sigma * particle_box_len**2
+    force_magnitude = target_force(sigma, top_wall.GetBoundaryMass())
     force_motion = topwall_motions.New()
     force_motion.SetType('Additional Force')
     add_force = force_motion.GetTypeObject()

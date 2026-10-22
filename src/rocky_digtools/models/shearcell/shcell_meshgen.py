@@ -1,6 +1,7 @@
 import fcntl
 import os
 import pathlib
+import warnings
 
 import gmsh
 import numpy as np
@@ -376,7 +377,7 @@ def create_meshes(
     return ppm
 
 
-def get_mesh_metrics(mesh_filepath: str) -> dict:
+def get_mesh_metrics(mesh_filepath: str, density: float = 2700.0) -> dict:
     """
     Get mesh metrics from an STL file.
 
@@ -384,23 +385,40 @@ def get_mesh_metrics(mesh_filepath: str) -> dict:
     ----------
     mesh_filepath : str
         Filepath to the STL mesh file.
+    density : float
+        Material density (kg/m3) used for the mass and inertia.
+        Defaults to 2700 (aluminium).
 
     Returns
     -------
     dict
         A dictionary containing:
         - volume (float): Volume of the mesh.
+        - mass (float): Mass of the mesh at ``density``.
         - cog (list[float]): Center of gravity coordinates [x, y, z].
-        - inertia (list[float]): Inertia tensor components.
+        - pmoment_inertia (list[float]): Moments of inertia [Ixx, Iyy, Izz]
+          about the COG at ``density`` (kg m2).
     """
     mesh = Mesh.from_file(mesh_filepath)
+    # numpy-stl returns the inertia tensor about the COG for unit density
     volume, cog, inertia_mat = mesh.get_mass_properties()
+    inertia_mat = np.asarray(inertia_mat, dtype=float) * density
 
-    pmoment_inert = np.linalg.eig(inertia_mat).eigenvalues
+    # Rocky takes the moments along x, y, z, so the principal axes of the
+    # mesh must be (close to) aligned with them
+    diag = np.diag(inertia_mat)
+    off_diag = inertia_mat - np.diag(diag)
+    if np.abs(off_diag).max() > 1e-2 * np.abs(diag).max():
+        warnings.warn(
+            f"Principal axes of {mesh_filepath} are not aligned with x, y, z; "
+            "using the diagonal of the inertia tensor."
+        )
+
     mesh_metrics = {
         "volume": volume.item(),
+        "mass": volume.item() * density,
         "cog": cog.tolist(),
-        "pmoment_inertia": pmoment_inert.tolist(),
+        "pmoment_inertia": diag.tolist(),
     }
 
     return mesh_metrics

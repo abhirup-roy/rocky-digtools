@@ -34,9 +34,38 @@ def _phase_times(
     settle_end = fill_end + t_settle
     compression_end = settle_end + t_compression
     return fill_end, settle_end, compression_end, compression_end + t_shear
+
+
 def _target_force(sigma: float, area: float, wall_mass: float) -> float:
     """Additional downward force needed for a target normal stress (N)."""
     return sigma * area - wall_mass * 9.81
+
+
+def _default_top_wall_mass(sigma_pre: float, n_shear_points: int, area: float) -> float:
+    """Top wall mass whose weight gives the lowest shear-point stress (kg).
+
+    A heavy lid keeps the free-body wall on the bed; capping it at the lowest
+    shear-point stress keeps the additional force downward for every point.
+    """
+    return sigma_pre / n_shear_points * area / 9.81
+
+
+def _load_steps(
+    force: float, t_start: float, t_ramp: float, t_stop: float, n_steps: int = 10
+) -> list[tuple[float, float, float]]:
+    """Split a linear force ramp into constant ``(start, stop, force)`` stages.
+
+    The last stage holds the full force until ``t_stop``.
+    """
+    dt = t_ramp / n_steps
+    return [
+        (
+            t_start + (k - 1) * dt,
+            t_start + k * dt if k < n_steps else t_stop,
+            force * k / n_steps,
+        )
+        for k in range(1, n_steps + 1)
+    ]
 
 
 @dataclass(slots=True)
@@ -83,6 +112,8 @@ class Settings:
     loc: str = "az-gpu"  # SLURM cluster preset
     shear_run_days: int = 5
     t_fill: float = 0.5  # constant fill time for shear template
+    # top wall mass (kg); None gives the lowest shear-point stress as dead weight
+    top_wall_mass: Optional[float] = None
 
     mesh_dir: Optional[str | pathlib.Path] = None
     plots_dir: Optional[str | pathlib.Path] = None
@@ -247,6 +278,9 @@ class Settings:
         if self.loc not in valid_loc:
             errors.append(f"'loc' must be one of {valid_loc}, got '{self.loc}'.")
 
+        if self.top_wall_mass is not None and self.top_wall_mass <= 0:
+            errors.append(f"'top_wall_mass' must be > 0, got {self.top_wall_mass}.")
+
         if self.n_shear_points < 1:
             errors.append(f"'n_shear_points' must be >= 1, got {self.n_shear_points}.")
         if self.n_procs < 1:
@@ -365,6 +399,7 @@ class Settings:
             neighbour_search=exp["neighbour_search"],
             t_shear=exp["t_shear"],
             shear_vel=exp["shear_vel"],
+            top_wall_mass=exp.get("top_wall_mass"),
             # Contact models
             normal_force_model=contact["normal"],
             tangential_force_model=contact["tangential"],
@@ -475,10 +510,18 @@ class ShearCellSimulation(PyrockySimulation):
         )[0]
         top_wall.SetName("Compression Wall 1")
 
+        p = self.settings
         mesh_metrics = get_mesh_metrics(str(top_wall_path))
-        top_wall.SetPrincipalMomentOfInertia(mesh_metrics["pmoment_inertia"])
+        wall_mass = p.top_wall_mass or _default_top_wall_mass(
+            p.sigma_pre, p.n_shear_points, p.particle_box_len**2
+        )
+        # scale the inertia with the mass so the two stay consistent
+        inertia = np.asarray(mesh_metrics["pmoment_inertia"]) * (
+            wall_mass / mesh_metrics["mass"]
+        )
+        top_wall.SetPrincipalMomentOfInertia(inertia.tolist())
         top_wall.SetGravityCenter(mesh_metrics["cog"])
-        top_wall.SetBoundaryMass(mesh_metrics["volume"] * 2700.0)
+        top_wall.SetBoundaryMass(wall_mass)
 
         bottom_wall_path = mesh_dir / "bottomwall.stl"
         bottom_wall = self._study.ImportWall(
@@ -524,10 +567,12 @@ class ShearCellSimulation(PyrockySimulation):
     def move_walls(self, insert: bool = True) -> None:
         """Apply motion frames to the top (compression) and bottom (shear) walls.
 
-        The top wall gets a free-body translation (settling) plus an
-        additional compressive force held for the whole pre-shear.  The
-        bottom wall gets a fixed-velocity translation along ``Z`` during the
-        shear phase.
+        The top wall is held in place until halfway through the settle phase,
+        so the poured bed can come to rest, and then gets a free-body
+        translation.  From the end of settling, an additional compressive
+        force ramps up in steps over the first half of the compression phase
+        and is then held for the rest of the pre-shear.  The bottom wall gets
+        a fixed-velocity translation along ``Z`` during the shear phase.
 
         Args:
             insert: If ``True``, timing accounts for the fill phase.
@@ -547,17 +592,20 @@ class ShearCellSimulation(PyrockySimulation):
         fill_end, settle_end, compression_end, shear_end = _phase_times(
             p.t_fill, p.t_settle, p.t_compression, p.t_shear, insert
         )
-        free_body_motion.SetStartTime(fill_end)
+        free_body_motion.SetStartTime(fill_end + p.t_settle / 2)
         free_body_motion.SetStopTime(shear_end)
 
         wall_mass = self._mesh["top_wall"].GetBoundaryMass()
         force_magnitude = _target_force(p.sigma_pre, p.particle_box_len**2, wall_mass)
-        force_motion = top_motions.New()
-        force_motion.SetType("Additional Force")
-        add_force = force_motion.GetTypeObject()
-        add_force.SetForceValue([0, -force_magnitude, 0], "N")
-        force_motion.SetStartTime(settle_end)
-        force_motion.SetStopTime(shear_end)
+        for t_start, t_stop, force in _load_steps(
+            force_magnitude, settle_end, p.t_compression / 2, shear_end
+        ):
+            force_motion = top_motions.New()
+            force_motion.SetType("Additional Force")
+            add_force = force_motion.GetTypeObject()
+            add_force.SetForceValue([0, -force, 0], "N")
+            force_motion.SetStartTime(t_start)
+            force_motion.SetStopTime(t_stop)
 
         top_frame.ApplyTo(self._ser(self._mesh["top_wall"]))
 
