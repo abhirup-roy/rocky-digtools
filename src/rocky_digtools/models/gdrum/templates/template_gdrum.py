@@ -15,17 +15,44 @@ particle_shapes = importlib.util.module_from_spec(spec)
 sys.modules["particles_shapes"] = particle_shapes
 spec.loader.exec_module(particle_shapes)
 
+# L_BOX is the equivalent cube side used by the DOE engine to group meshes.
 box_len = {{L_BOX}}
-aspect_ratio = {{ASPECT_RATIO}}
+aspect_ratio = {{ASPECT_RATIO | default(none)}}
+length = {{LENGTH | default(none)}}
+radius = {{DRUM_RADIUS | default(none)}}
 rpm = {{RPM}}
+geometry_values = [value for value in (radius, length, aspect_ratio) if value is not None]
+if len(geometry_values) not in (1, 2):
+    raise ValueError("Provide exactly two drum geometry values, or box_len and one")
 if not all(
-    math.isfinite(value) and value > 0 for value in (box_len, aspect_ratio, rpm)
+    not isinstance(value, bool) and isinstance(value, (int, float))
+    and math.isfinite(value) and value > 0
+    for value in (box_len, rpm, *geometry_values)
 ):
-    raise ValueError("box_len, aspect_ratio and rpm must be finite and > 0")
+    raise ValueError("Drum geometry and RPM must be finite and > 0")
+if len(geometry_values) == 1:
+    if aspect_ratio is not None:
+        geometry_name = f"aspect_{float(aspect_ratio)}"
+    elif length is not None:
+        geometry_name = f"length_{float(length)}"
+    else:
+        geometry_name = f"radius_{float(radius)}"
 
-# drum dimensions
-radius = box_len / (2 * math.pi * aspect_ratio) ** (1 / 3)
-length = 2 * radius * aspect_ratio
+if radius is None:
+    if length is not None and aspect_ratio is not None:
+        radius = length / (2 * aspect_ratio)
+    elif aspect_ratio is not None:
+        radius = box_len / (2 * math.pi * aspect_ratio) ** (1 / 3)
+    else:
+        radius = math.sqrt(box_len**3 / (math.pi * length))
+if length is None:
+    length = 2 * radius * aspect_ratio if aspect_ratio is not None else box_len**3 / (math.pi * radius**2)
+aspect_ratio = length / (2 * radius)
+if len(geometry_values) == 2:
+    geometry_name = f"radius_{float(radius)}_length_{float(length)}"
+    drum_volume = math.pi * radius**2 * length
+else:
+    drum_volume = box_len**3
 
 t_fill = 1.0
 t_settle = 0.5
@@ -36,7 +63,7 @@ packing_fraction = 0.6
 t_rotate = n_revolutions * 60 / rpm
 duration = t_fill + t_settle + t_rotate
 
-mesh_dir = Path.cwd().parent / "meshes_{{ L_BOX }}" / f"aspect_{float(aspect_ratio)}"
+mesh_dir = Path.cwd().parent / "meshes_{{ L_BOX }}" / geometry_name
 p_radius = particle_shapes.normalise_radius({{RADIUS_P}})
 p_density = {{DENSITY_P}}
 distribution = p_radius if isinstance(p_radius, dict) else {p_radius: 1.0}
@@ -45,7 +72,7 @@ particle_volume = sum(
     4 / 3 * math.pi * size**3 * weight for size, weight in distribution.items()
 ) / sum(distribution.values())
 
-n_particles = round(box_len**3 * fill_fraction * packing_fraction / particle_volume)
+n_particles = round(drum_volume * fill_fraction * packing_fraction / particle_volume)
 charge_mass = n_particles * particle_volume * p_density
 if n_particles < 1 or 2 * max(distribution) >= min(radius, 0.9 * length):
     raise ValueError(
@@ -246,7 +273,7 @@ def post_process() -> dict:
     results = {
         "drum_radius": radius,
         "drum_length": length,
-        "drum_volume": box_len**3,
+        "drum_volume": drum_volume,
         "aspect_ratio": aspect_ratio,
         "rpm": rpm,
         "t_rotate": t_rotate,

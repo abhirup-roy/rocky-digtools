@@ -8,7 +8,7 @@ from pathlib import Path
 from ...particles_shapes import normalise_radius
 from .. import PyrockySimulation
 from ..doe.schema import ShapeConfig, field_values
-from .drum_meshgen import create_meshes, drum_dimensions
+from .drum_meshgen import create_meshes, drum_dimensions, geometry_name
 
 
 def validate_rpm(rpm):
@@ -23,15 +23,14 @@ def validate_rpm(rpm):
 
 @dataclass
 class Settings:
-    """Common uniax inputs plus L/D and RPM; lengths in m and times in s.
+    """Specify two of radius, length and L/D, or particle_box_len plus one.
 
+    Lengths are in metres and times in seconds.
     ``fill_fraction`` is bulk volume / drum volume. ``packing_fraction``
     estimates solid volume / bulk volume when converting that target to mass.
     """
 
     project_dir: str | Path
-    particle_box_len: float
-    aspect_ratio: float
     rpm: float
     p_radius: float | dict
     p_density: float
@@ -43,6 +42,10 @@ class Settings:
     fric_dyn_pw: float
     fric_stat_pw: float
     cor_pw: float
+    particle_box_len: float | None = None
+    aspect_ratio: float | None = None
+    length: float | None = None
+    radius: float | None = None
     tang_stiff_ratio_pp: float | None = None
     tang_stiff_ratio_pw: float | None = None
     surf_en_pp: float = 0.0
@@ -76,24 +79,38 @@ class Settings:
         self.mesh_dir = (
             Path(self.mesh_dir)
             if self.mesh_dir is not None
-            else (self.project_dir.parent / f"meshes_{self.particle_box_len}")
+            else (self.project_dir.parent / f"meshes_{self.equivalent_box_len}")
         )
         self.plots_dir = (
             Path(self.plots_dir) if self.plots_dir else self.project_dir / "plots"
         )
-        geometry_dir = self.mesh_dir / f"aspect_{float(self.aspect_ratio)}"
         if not all(
-            (geometry_dir / name).is_file() for name in ("drum_shell.stl", "insert.stl")
+            (self.geometry_dir / name).is_file()
+            for name in ("drum_shell.stl", "insert.stl")
         ):
+            geometry = {
+                key: value
+                for key, value in (
+                    ("length", self.length),
+                    ("aspect_ratio", self.aspect_ratio),
+                    ("radius", self.radius),
+                )
+                if value is not None
+            }
             create_meshes(
                 self.particle_box_len,
                 out_dir=self.mesh_dir,
-                aspect_ratio=self.aspect_ratio,
+                **geometry,
             )
         self.project_dir.mkdir(parents=True, exist_ok=True)
 
     def _validate(self):
-        drum_dimensions(self.particle_box_len, self.aspect_ratio)
+        drum_dimensions(
+            self.particle_box_len,
+            self.aspect_ratio,
+            length=self.length,
+            radius=self.radius,
+        )
         validate_rpm(self.rpm)
         for name in (
             "p_density",
@@ -177,11 +194,44 @@ class Settings:
 
     @property
     def drum_radius(self):
-        return drum_dimensions(self.particle_box_len, self.aspect_ratio)[0]
+        return drum_dimensions(
+            self.particle_box_len,
+            self.aspect_ratio,
+            length=self.length,
+            radius=self.radius,
+        )[0]
 
     @property
     def drum_length(self):
-        return drum_dimensions(self.particle_box_len, self.aspect_ratio)[1]
+        return drum_dimensions(
+            self.particle_box_len,
+            self.aspect_ratio,
+            length=self.length,
+            radius=self.radius,
+        )[1]
+
+    @property
+    def drum_volume(self):
+        if self.particle_box_len is not None:
+            return self.particle_box_len**3
+        return math.pi * self.drum_radius**2 * self.drum_length
+
+    @property
+    def equivalent_box_len(self):
+        return (
+            self.particle_box_len
+            if self.particle_box_len is not None
+            else self.drum_volume ** (1 / 3)
+        )
+
+    @property
+    def geometry_dir(self):
+        return self.mesh_dir / geometry_name(
+            self.particle_box_len,
+            self.aspect_ratio,
+            length=self.length,
+            radius=self.radius,
+        )
 
     @property
     def angular_velocity(self):
@@ -204,7 +254,7 @@ class Settings:
     @property
     def n_particles(self):
         return round(
-            self.particle_box_len**3
+            self.drum_volume
             * self.fill_fraction
             * self.packing_fraction
             / self.expected_particle_volume
@@ -222,10 +272,10 @@ class Settings:
     @classmethod
     def from_json(cls, path, project_dir):
         """Read nested scalar JSON using the same common fields as uniax."""
-        from .doe import GDRUM_SCHEMA
+        from .doe import _schema_for_settings
 
         data = json.loads(Path(path).read_text())
-        values = field_values(data, GDRUM_SCHEMA)
+        values = field_values(data, _schema_for_settings(data["experiment_settings"]))
         shape = ShapeConfig.from_dict({"n_corners": 30, **data["shape"]})
         mapping = {
             "radius": "p_radius",
@@ -234,6 +284,7 @@ class Settings:
             "poisson": "p_poisson",
             "fric_rolling": "rolling_fric",
             "box_len": "particle_box_len",
+            "drum_radius": "radius",
             "normal": "normal_force_model",
             "tangential": "tangential_force_model",
             "rolling": "rolling_model",
@@ -268,9 +319,7 @@ class GranularDrumSimulation(PyrockySimulation):
         super().__init__(filename, settings, "Rotating Granular Drum")
 
     def load_meshes(self):
-        directory = (
-            self.settings.mesh_dir / f"aspect_{float(self.settings.aspect_ratio)}"
-        )
+        directory = self.settings.geometry_dir
         walls = self._study.ImportWall(
             str(directory / "drum_shell.stl"), import_scale=1.0, convert_yz=False
         )
@@ -336,8 +385,8 @@ class GranularDrumSimulation(PyrockySimulation):
         result = {
             "drum_radius": self.settings.drum_radius,
             "drum_length": self.settings.drum_length,
-            "drum_volume": self.settings.particle_box_len**3,
-            "aspect_ratio": self.settings.aspect_ratio,
+            "drum_volume": self.settings.drum_volume,
+            "aspect_ratio": self.settings.drum_length / (2 * self.settings.drum_radius),
             "rpm": self.settings.rpm,
             "t_rotate": self.settings.t_rotate,
             "fill_fraction": self.settings.fill_fraction,

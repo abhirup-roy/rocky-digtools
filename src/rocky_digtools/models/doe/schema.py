@@ -15,7 +15,7 @@ import itertools
 import json
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
 import pandas as pd
@@ -95,13 +95,14 @@ def get_nested(data: dict[str, Any], path: tuple[str, ...]) -> Any:
 def field_values(data: dict[str, Any], schema: ParamSchema) -> dict[str, Any]:
     """Read schema values, applying defaults for optional common fields."""
     values = {}
+    defaults = {**_COMMON_DEFAULTS, **schema.defaults}
     for name, path in field_paths(schema).items():
         try:
             values[name] = get_nested(data, path)
         except KeyError:
-            if name not in _COMMON_DEFAULTS:
+            if name not in defaults:
                 raise
-            values[name] = _COMMON_DEFAULTS[name]
+            values[name] = defaults[name]
     return values
 
 
@@ -256,10 +257,15 @@ class ParamSchema:
         extra_ranges: Validation ranges (``(lower, upper)``, ``upper=None``
             means unbounded) for the extra fields, used by OFAT bounds
             checking.
+        defaults: Model-specific defaults for omitted fields.
+        normalise_values: Optional per-case derivation after sweep/OFAT expansion,
+            for example an equivalent box length derived from drum geometry.
     """
 
     extra_experiment_fields: tuple[str, ...] = ()
     extra_ranges: dict[str, tuple[float, Optional[float]]] = field(default_factory=dict)
+    defaults: dict[str, Any] = field(default_factory=dict)
+    normalise_values: Optional[Callable[[dict], dict]] = None
 
     @property
     def fields(self) -> tuple[str, ...]:
@@ -280,7 +286,7 @@ def _load_json(json_path: str) -> OrderedDict:
 def _field_sources(params: OrderedDict, schema: ParamSchema) -> dict[str, Any]:
     """Map each schema field name to its (possibly list-valued) JSON source."""
     sources = field_values(params, schema)
-    for name in _COMMON_DEFAULTS:
+    for name in {**_COMMON_DEFAULTS, **schema.defaults}:
         if not isinstance(sources[name], list):
             sources[name] = [sources[name]]
     # A radius distribution is one parameter value, not a sweep iterable.
@@ -328,6 +334,8 @@ def iter_params(json_path: str, schema: ParamSchema) -> list[SimParams]:
     result = []
     for combo in combinations:
         values = dict(zip(ordered_fields, combo[:-1]))
+        if schema.normalise_values:
+            values = schema.normalise_values(values)
         shape_dict = combo[-1]
         common, extra = _split_common_extra(schema, values)
         result.append(
@@ -484,6 +492,11 @@ def iter_ofat(
                 experiment[factor] = level
                 experiments.append(experiment)
 
+    if schema.normalise_values:
+        experiments = [
+            schema.normalise_values({**ofat_base_valid, **experiment})
+            for experiment in experiments
+        ]
     experiments_df = pd.DataFrame(experiments)
 
     ofat_vars = set(experiments_df.columns)
