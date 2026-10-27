@@ -17,7 +17,7 @@ import numpy as _np
 from .. import particles_shapes as _particles_shapes
 from ..pyrocky.helpers import pyrocky_run as _pyrocky_run
 
-__all__ = ["doe", "uniax", "shearcell"]
+__all__ = ["doe", "uniax", "shearcell", "gdrum"]
 
 
 @_pyrocky_run()
@@ -221,8 +221,9 @@ class PyrockySimulation(_abc.ABC):
         wall_mat.SetPoissonRatio(0.3)
         wall_mat.SetUseBulkDensity(False)
 
-        self._mesh["top_wall"].SetMaterial(self._ser(wall_mat))
-        self._mesh["bottom_wall"].SetMaterial(self._ser(wall_mat))
+        for name, wall in self._mesh.items():
+            if name != "insert_inlet":
+                wall.SetMaterial(self._ser(wall_mat))
         self._materials["particle_mat"] = particle_mat
         self._materials["wall_mat"] = wall_mat
 
@@ -300,4 +301,4 @@ class PyrockySimulation(_abc.ABC):
 
 
 # Avoiding circular import
-from . import doe, shearcell, uniax  # noqa: E402
+from . import doe, shearcell, uniax, gdrum  # noqa: E402
