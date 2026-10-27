@@ -28,7 +28,7 @@ class cd:
 
 
 # Default command run inside each job to drive a single uniaxial case.
-DEFAULT_RUN_COMMAND = 'Rocky --script "script_uniax.py" --headless >> rocky.log'
+DEFAULT_RUN_COMMAND = 'Rocky --script "$PWD/script_uniax.py" --headless >> rocky.log'
 
 # Module-load / setup blocks reused by the cluster presets.
 _BEAR_COMMANDS = (
@@ -152,7 +152,7 @@ class RockyScheduler:
         )
 
     @classmethod
-    def bb_gpu(cls, ngpus=1, run_days=12, account=None, **kwargs):
+    def bb_gpu(cls, ngpus=1, run_days=2, account=None, **kwargs):
         """Preset for the University of Birmingham BlueBear GPU partition."""
         return cls(
             time=f"{run_days}-0",

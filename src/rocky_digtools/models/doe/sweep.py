@@ -15,7 +15,7 @@ from typing import Optional
 
 from tqdm import tqdm
 
-from ...utils import RockyScheduler
+from ...utils import DEFAULT_RUN_COMMAND, RockyScheduler
 from . import shapes_module_path
 from .runtime import (
     ModelRuntime,
@@ -72,6 +72,12 @@ def launch_sweep(
     elif backend == "pyrocky":
         scheduler.run_command = (
             f"{sys.executable} -m {runtime.case_runner_module} settings.json"
+        )
+    elif scheduler.run_command == DEFAULT_RUN_COMMAND:
+        # Rocky resolves relative --script paths against ~/.Rocky/scripts,
+        # so point it at this model's script in the case dir explicitly.
+        scheduler.run_command = (
+            f'Rocky --script "$PWD/{runtime.script_filename}" --headless >> rocky.log'
         )
 
     target = target.upper()
