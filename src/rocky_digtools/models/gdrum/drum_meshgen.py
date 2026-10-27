@@ -1,4 +1,4 @@
-"""Closed horizontal drum and downward-facing particle inlet meshes (metres)."""
+"""Axially periodic drum shell and downward-facing inlet meshes (metres)."""
 
 import math
 from pathlib import Path
@@ -21,9 +21,11 @@ def drum_dimensions(box_len: float, aspect_ratio: float) -> tuple[float, float]:
 
 
 def draw_cylinder(radius, length, center):
-    """Add a closed cylinder aligned with Z; return its volume tag."""
+    """Add a cylindrical shell aligned with Z, without end caps; return its surface tag."""
     x, y, z = center
-    return gmsh.model.occ.addCylinder(x, y, z - length / 2, 0, 0, length, radius)
+    circle = gmsh.model.occ.addCircle(x, y, z - length / 2, radius)
+    surfaces = gmsh.model.occ.extrude([(1, circle)], 0, 0, length)
+    return next(tag for dimension, tag in surfaces if dimension == 2)
 
 
 def draw_insert(length, width, height):
@@ -37,7 +39,7 @@ def draw_insert(length, width, height):
 def create_meshes(
     size, meshsize=0.001, out_dir="meshes", aspect_ratio=1.0, *, aspect_ratios=None
 ):
-    """Write drum.stl and insert.stl under aspect_<ratio>/ for each geometry.
+    """Write drum_shell.stl and insert.stl under aspect_<ratio>/ for each geometry.
 
     ``size`` is the equivalent cube side length, not the drum diameter.
     Separate ratio directories let sweep/OFAT cases share each geometry safely.
@@ -54,10 +56,10 @@ def create_meshes(
         for ratio, radius, length in dimensions:
             destination = Path(out_dir) / f"aspect_{float(ratio)}"
             destination.mkdir(parents=True, exist_ok=True)
-            for name in ("drum", "insert"):
+            for name in ("drum_shell", "insert"):
                 gmsh.model.add(f"gdrum_{name}")
                 try:
-                    if name == "drum":
+                    if name == "drum_shell":
                         draw_cylinder(radius, length, (0, 0, 0))
                     else:
                         draw_insert(0.9 * length, radius, radius / 2)

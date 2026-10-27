@@ -1,4 +1,4 @@
-"""Standalone Rocky PrePost drum script, rendered by Jinja2."""
+"""Standalone Rocky PrePost drum script with axial periodicity, rendered by Jinja2."""
 
 import importlib.util
 import json
@@ -51,6 +51,8 @@ if n_particles < 1 or 2 * max(distribution) >= min(radius, 0.9 * length):
     raise ValueError(
         "Particles must fit through the inlet and the charge must contain at least one particle"
     )
+if 2 * max(distribution) >= 0.4 * length:
+    raise ValueError("Particle diameter must be < 0.4 times the axial periodic length")
 
 
 def setup(filename="granular_drum.rocky") -> None:
@@ -64,11 +66,11 @@ def setup(filename="granular_drum.rocky") -> None:
 
 
 def load_meshes() -> None:
-    """Import the closed drum walls and particle inlet surface."""
+    """Import the drum shell without end caps and the particle inlet surface."""
     global walls, inlet_surface
 
     walls = study.ImportWall(
-        str(mesh_dir / "drum.stl"), import_scale=1.0, convert_yz=False
+        str(mesh_dir / "drum_shell.stl"), import_scale=1.0, convert_yz=False
     )
     for index, wall in enumerate(walls):
         wall.SetName(f"Drum {index}")
@@ -186,7 +188,7 @@ def insertion_settings() -> None:
 
 
 def rotate_drum() -> None:
-    """Rotate the drum and both end caps after filling and settling."""
+    """Rotate the cylindrical shell after filling and settling."""
     frame = study.GetMotionFrameSource().NewFrame()
     frame.SetRelativePosition([0, 0, 0], "m")
     motion = frame.GetMotions().New()
@@ -201,12 +203,14 @@ def rotate_drum() -> None:
 
 
 def set_domain_settings() -> None:
-    """Set nonperiodic coordinate limits around the drum."""
+    """Set Z-periodic planes at the axial ends and coordinate limits around the drum."""
     domain = study.GetDomainSettings()
     domain.DisableUseBoundaryLimits()
     domain.DisablePeriodicAtGeometryLimits()
     domain.SetDomainType("CARTESIAN")
-    domain.SetCartesianPeriodicDirections("NONE")
+    domain.SetCartesianPeriodicDirections("Z")
+    domain.SetPeriodicLimitsMinCoordinates([-1.1 * radius, -1.1 * radius, -length / 2])
+    domain.SetPeriodicLimitsMaxCoordinates([1.1 * radius, 1.1 * radius, length / 2])
     domain.SetCoordinateLimitsMinValues([-1.1 * radius, -1.1 * radius, -0.55 * length])
     domain.SetCoordinateLimitsMaxValues([1.1 * radius, 1.1 * radius, 0.55 * length])
 

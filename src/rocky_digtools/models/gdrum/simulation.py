@@ -83,7 +83,7 @@ class Settings:
         )
         geometry_dir = self.mesh_dir / f"aspect_{float(self.aspect_ratio)}"
         if not all(
-            (geometry_dir / name).is_file() for name in ("drum.stl", "insert.stl")
+            (geometry_dir / name).is_file() for name in ("drum_shell.stl", "insert.stl")
         ):
             create_meshes(
                 self.particle_box_len,
@@ -168,6 +168,10 @@ class Settings:
         )
         if 2 * largest_radius >= min(self.drum_radius, 0.9 * self.drum_length):
             raise ValueError("Particle diameter must fit through the drum inlet")
+        if 2 * largest_radius >= 0.4 * self.drum_length:
+            raise ValueError(
+                "Particle diameter must be < 0.4 times the axial periodic length"
+            )
         if self.n_particles < 1:
             raise ValueError("Drum charge must contain at least one particle")
 
@@ -258,7 +262,7 @@ class Settings:
 
 
 class GranularDrumSimulation(PyrockySimulation):
-    """A closed drum and its end caps rotate together after gravity settling."""
+    """A rotating cylindrical shell with periodic boundaries at its axial ends."""
 
     def __init__(self, settings, filename="granular_drum.rocky"):
         super().__init__(filename, settings, "Rotating Granular Drum")
@@ -268,7 +272,7 @@ class GranularDrumSimulation(PyrockySimulation):
             self.settings.mesh_dir / f"aspect_{float(self.settings.aspect_ratio)}"
         )
         walls = self._study.ImportWall(
-            str(directory / "drum.stl"), import_scale=1.0, convert_yz=False
+            str(directory / "drum_shell.stl"), import_scale=1.0, convert_yz=False
         )
         for index, wall in enumerate(walls):
             wall.SetName(f"Drum {index}")
@@ -310,8 +314,12 @@ class GranularDrumSimulation(PyrockySimulation):
         domain.DisableUseBoundaryLimits()
         domain.DisablePeriodicAtGeometryLimits()
         domain.SetDomainType("CARTESIAN")
-        domain.SetCartesianPeriodicDirections("NONE")
+        domain.SetCartesianPeriodicDirections("Z")
         radius, length = self.settings.drum_radius, self.settings.drum_length
+        domain.SetPeriodicLimitsMinCoordinates(
+            [-1.1 * radius, -1.1 * radius, -length / 2]
+        )
+        domain.SetPeriodicLimitsMaxCoordinates([1.1 * radius, 1.1 * radius, length / 2])
         domain.SetCoordinateLimitsMinValues(
             [-1.1 * radius, -1.1 * radius, -0.55 * length]
         )
