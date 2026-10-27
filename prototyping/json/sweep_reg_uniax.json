@@ -20,6 +20,9 @@
         ],
         "youngmod": [
             5e6
+        ],
+        "fric_rolling": [
+            0.1
         ]
     },
     "interactions": {
@@ -29,9 +32,6 @@
             ],
             "fric_stat": [
                 0.3
-            ],
-            "fric_rolling": [
-                0.1
             ],
             "cor": [
                 0.9
@@ -43,9 +43,6 @@
             ],
             "fric_stat": [
                 0.3
-            ],
-            "fric_rolling": [
-                0.1
             ],
             "cor": [
                 0.4
