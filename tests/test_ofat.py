@@ -179,7 +179,7 @@ class TestLaunchOfat:
                 "poisson": 0.25,
                 "youngmod": 5e6,
             },
-            "inseractions": {
+            "interactions": {
                 "pp": {
                     "fric_dyn": 0.5,
                     "fric_stat": 0.3,
@@ -193,7 +193,7 @@ class TestLaunchOfat:
                     "cor": 0.9,
                 },
             },
-            "experim_settings": {"box_len": 0.01, "p_compress": 1000.0},
+            "experiment_settings": {"box_len": 0.01, "p_compress": 1000.0},
             "contact_model": {
                 "normal": "linear_hysteresis",
                 "tangential": "coulomb_limit",
@@ -236,7 +236,7 @@ class TestLaunchOfat:
                 "poisson": 0.25,
                 "youngmod": 5e6,
             },
-            "inseractions": {
+            "interactions": {
                 "pp": {
                     "fric_dyn": 0.5,
                     "fric_stat": 0.3,
@@ -250,7 +250,7 @@ class TestLaunchOfat:
                     "cor": 0.9,
                 },
             },
-            "experim_settings": {"box_len": 0.01, "p_compress": 1000.0},
+            "experiment_settings": {"box_len": 0.01, "p_compress": 1000.0},
             "contact_model": {
                 "normal": "linear_hysteresis",
                 "tangential": "coulomb_limit",

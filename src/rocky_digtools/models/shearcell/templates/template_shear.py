@@ -25,11 +25,41 @@ from typing import Optional
 
 INSERTIONS = True  # Whether to use insertions or not
 T_FILL = 0.5  # Time to fill the box with particles (s)
+N_LOAD_STEPS = 10  # Number of stages in the compression force ramp
+
+
+def phase_times():
+    """Return cumulative fill, settle, compression, and shear end times."""
+    fill_end = T_FILL if INSERTIONS else 0.0
+    settle_end = fill_end + params_dict['t_settle']
+    compression_end = settle_end + params_dict['t_compression']
+    return fill_end, settle_end, compression_end, compression_end + params_dict['t_shear']
+
+
+def target_force(sigma: float, wall_mass: float) -> float:
+    """Additional downward force needed for a target normal stress (N)."""
+    return sigma * params_dict['particle_box_len']**2 - wall_mass * 9.81
+
+
+def load_steps(force: float, t_start: float, t_ramp: float, t_stop: float) -> list:
+    """Split a linear force ramp into constant (start, stop, force) stages.
+
+    The last stage holds the full force until t_stop.
+    """
+    dt = t_ramp / N_LOAD_STEPS
+    return [
+        (
+            t_start + (k - 1) * dt,
+            t_start + k * dt if k < N_LOAD_STEPS else t_stop,
+            force * k / N_LOAD_STEPS,
+        )
+        for k in range(1, N_LOAD_STEPS + 1)
+    ]
 
 
 # Import particle shapes using importlib
 shapes_spec = importlib.util.spec_from_file_location(
-    'particles_shapes', os.path.abspath('../../../particles_shapes.py'))
+    'particles_shapes', "{{SHAPES_MODULE_PATH}}")
 if not shapes_spec:
     raise ImportError("Could not find the particles_shapes.py file.")
 particle_shapes = importlib.util.module_from_spec(shapes_spec)
@@ -51,7 +81,6 @@ outputs_dir: str = os.path.join(
 if not os.path.exists(outputs_dir):
     os.makedirs(outputs_dir, exist_ok=True)
 
-# For pyrocky API TODO: Add pyrocky implementation
 # bb_rocky_path = '/rds/bear-apps/2023a/EL8-ice/software/ANSYS_Rocky/2024R2.0/bin/Rocky'
 # vm_rocky_path = '/home/rocky-vm/ansys_inc/v242/rocky/bin/Rocky'
 
@@ -76,32 +105,38 @@ def get_params(params):
     else:
         raise ValueError("params must be a JSON string or a dictionary.")
 
-    keys_valdn = [
+    valid_keys = [
         'p_radius', 'p_density', 'p_youngmod',
         'p_poisson', 'rolling_model', 'pp_dynamic_friction',
-        'pp_static_friction', 'rolling_friction', 'pp_cor',
+        'pp_static_friction', 'pp_tangential_stiffness_ratio',
+        'rolling_friction', 'pp_cor',
         'pw_dynamic_friction', 'pw_static_friction',
-        'pw_cor', 'normal_force_model', 'tangential_force_model',
+        'pw_tangential_stiffness_ratio', 'pw_cor',
+        'normal_force_model', 'tangential_force_model',
         'adhesion', 'particle_box_len', 't_settle',
         't_compression', 'sigma_pre', 'n_shear_points',
         'processor', 'n_procs', 'neighbour_search',
-        't_shear', 'shear_vel', 'shape', 'mesh_metrics'
+        't_shear', 'shear_vel', 'shape', 'mesh_metrics',
+        'top_wall_mass'
     ]
 
     # Find the keys that are not in the list of valid keys
-    invalid_keys = set(params_dict.keys()) - set(keys_valdn)
+    invalid_keys = set(params_dict.keys()) - set(valid_keys)
     if invalid_keys:
         raise ValueError(
-            f"Invalid parameter(s): {', '.join(invalid_keys)}. Expected one of {keys_valdn}.")
+            f"Invalid parameter(s): {', '.join(invalid_keys)}. Expected one of {valid_keys}.")
 
     # Check if the values are compatible with Rocky API
     if 'rolling_model' in params_dict.keys():
         assert params_dict['rolling_model'] in [
             'type_1', 'type_3', 'none', 'custom']
-        
-        if 'rolling_friction' not in params_dict \
-        and params_dict['rolling_model'] == 'none':
+
+        if params_dict['rolling_model'] == 'none':
             params_dict['rolling_friction'] = 0.
+        elif 'rolling_friction' not in params_dict:
+            raise ValueError(
+                "rolling_friction is required when rolling_model is enabled."
+            )
 
     if 'normal_force_model' in params_dict.keys():
         assert params_dict['normal_force_model'] in [
@@ -126,23 +161,33 @@ def get_params(params):
 
         case 'constant':
             assert 'adhesive_distance' in params_dict['adhesion'].keys(
-            ), "If adhesion_model is 'linear', 'adhesion_distance' must be specified."
+            ), "If adhesion_model is 'constant', 'adhesive_distance' must be specified."
             assert 'force_fraction' in params_dict['adhesion'].keys(
-            ), "If adhesion_model is 'linear', 'force_fraction' must be specified."
+            ), "If adhesion_model is 'constant', 'force_fraction' must be specified."
 
         case 'linear':
             assert 'adhesive_distance' in params_dict['adhesion'].keys(
-            ), "If adhesion_model is 'linear', 'adhesion_distance' must be specified."
+            ), "If adhesion_model is 'linear', 'adhesive_distance' must be specified."
             assert 'stiffness_fraction' in params_dict['adhesion'].keys(
             ), "If adhesion_model is 'linear', 'stiffness_fraction' must be specified."
 
         case 'JKR':
             assert all(key in params_dict['adhesion'] for key in [
-                'p_surface_energy', 'pp_surface_energy', 'pw_surface_energy'
+                'pp_surface_energy', 'pw_surface_energy'
             ]), \
-                "If adhesion_model is 'JKR', 'p_surface_energy', 'pp_surface_energy', and 'pw_surface_energy' must be specified."
+                "If adhesion_model is 'JKR', 'pp_surface_energy' and 'pw_surface_energy' must be specified."
             assert params_dict['normal_force_model'] == 'damped_hertzian', \
                 "If adhesion_model is 'JKR', normal_force_model must be 'damped_hertzian'."
+
+    # A heavy lid keeps the free-body wall on the bed. By default its weight
+    # gives the lowest shear-point stress, so the additional force stays
+    # downward for every point.
+    if params_dict.get('top_wall_mass') is None:
+        params_dict['top_wall_mass'] = (
+            params_dict['sigma_pre'] / params_dict['n_shear_points']
+            * params_dict['particle_box_len']**2 / 9.81
+        )
+    assert params_dict['top_wall_mass'] > 0, "top_wall_mass must be > 0."
 
     if 'neighbour_search' in params_dict.keys():
         assert params_dict['neighbour_search'] in [
@@ -221,16 +266,17 @@ def import_meshes(
         convert_yz=False)[0]
     top_wall.SetName('Compression Wall 1')
 
-    vol_top = params_dict['mesh_metrics']['volume']
-    cog_top = params_dict['mesh_metrics']['cog']
-    pm_inert_top = params_dict['mesh_metrics']['pmoment_inertia']
+    mesh_metrics = params_dict['mesh_metrics']
+    wall_mass = params_dict['top_wall_mass']
+    # Scale the mesh inertia with the mass so the two stay consistent
+    pm_inert_top = [
+        inertia * wall_mass / mesh_metrics['mass']
+        for inertia in mesh_metrics['pmoment_inertia']
+    ]
 
     top_wall.SetPrincipalMomentOfInertia(pm_inert_top)
-    top_wall.SetGravityCenter(cog_top)
-    top_wall.SetBoundaryMass(vol_top * 2700)  # Assuming wall density of 2700 kg/m3
-
-    if INSERTIONS:
-        top_wall.SetEnableTime(T_FILL + 0.25)
+    top_wall.SetGravityCenter(mesh_metrics['cog'])
+    top_wall.SetBoundaryMass(wall_mass)
 
     bottom_wall = study.ImportWall(
         bottom_path_abs,
@@ -253,9 +299,26 @@ def import_meshes(
 
         insert_plane = study.ImportSurface(
             insert_path,
-            import_scale=1.0,
+            import_scale=0.98,
             convert_yz=False
         )[0]
+
+        box_len = params_dict['particle_box_len']
+        fill_ceiling_y = box_len / 2
+        top_vane_tip_y = box_len * 0.9
+        radii = params_dict['p_radius']
+        max_radius = max(radii) if isinstance(radii, dict) else radii
+        min_clearance = 2 * max_radius
+        inlet_y = np.asarray(insert_plane.GetVertices()).mean(axis=0)[1]
+        clearance = min(inlet_y - fill_ceiling_y, top_vane_tip_y - inlet_y)
+
+        if clearance < min_clearance:
+            safe_inlet_y = (fill_ceiling_y + top_vane_tip_y) / 2
+            if safe_inlet_y - fill_ceiling_y < min_clearance:
+                raise ValueError(
+                    'Particle diameter exceeds the clearance below the top-wall vanes.'
+                )
+            insert_plane.SetTranslation([0, safe_inlet_y - inlet_y, 0])
 
     # Save the walls in a global variable
     walls = [top_wall, bottom_wall, insert_plane] if INSERTIONS else [top_wall, bottom_wall]
@@ -272,6 +335,7 @@ def simulation_physics():
     physics.SetNormalForceModel(params_dict['normal_force_model'])
     physics.SetTangentialForceModel(params_dict['tangential_force_model'])
     physics.SetAdhesionModel(params_dict['adhesion']['adhesion_model'])
+    physics.SetRollingResistanceModel(params_dict['rolling_model'])
 
     # Set gravity
     physics.SetGravityXDirection(0)
@@ -304,7 +368,7 @@ def specify_materials():
     wall_mat = material_collection.AddSolidMaterial()
     wall_mat.SetName("Wall Material")
     wall_mat.SetDensity(2700, 'kg/m3')
-    wall_mat.SetYoungsModulus(5e6, 'Pa')
+    wall_mat.SetYoungsModulus(1e9, 'Pa')
     wall_mat.SetPoissonRatio(0.3)
     wall_mat.SetUseBulkDensity(False)
 
@@ -345,11 +409,6 @@ def material_interactions():
     pp_interaction.SetDynamicFriction(
         params_dict['pp_dynamic_friction']
     )
-    if params_dict['rolling_model'] != 'none':
-        pp_interaction.SetRollingFriction(
-            params_dict['rolling_friction']
-        )
-
     # Set the contact laws for the particle-wall interaction
     pw_interaction.SetRestitutionCoefficient(
         params_dict['pw_cor']
@@ -360,9 +419,13 @@ def material_interactions():
     pw_interaction.SetDynamicFriction(
         params_dict['pw_dynamic_friction']
     )
-    if params_dict['rolling_model'] != 'none':
-        pw_interaction.SetRollingFriction(
-            params_dict['pw_rolling_friction']
+    if params_dict['pp_tangential_stiffness_ratio'] is not None:
+        pp_interaction.SetTangentialStiffnessRatio(
+            params_dict['pp_tangential_stiffness_ratio']
+        )
+    if params_dict['pw_tangential_stiffness_ratio'] is not None:
+        pw_interaction.SetTangentialStiffnessRatio(
+            params_dict['pw_tangential_stiffness_ratio']
         )
 
     # Set the adhesion values
@@ -401,7 +464,11 @@ def insertions():
     global study, particle, params_dict, walls
 
     fill_box_vol = params_dict['particle_box_len']**3
-    particle_vol = 4 / 3 * np.pi * (params_dict['p_radius']**3)
+    radii = params_dict['p_radius']
+    if isinstance(radii, dict):
+        particle_vol = sum((4 / 3) * np.pi * r**3 * p for r, p in radii.items()) / sum(radii.values())
+    else:
+        particle_vol = 4 / 3 * np.pi * radii**3
     n_particles = fill_box_vol * 0.5/ particle_vol
     mass_particles = n_particles * params_dict['p_density'] * particle_vol
 
@@ -464,7 +531,7 @@ def gen_particle():
         case _:
             raise ValueError(
                 f"Unknown shape type: {params_dict['shape']['shape_name']}. "
-                "Supported shapes are: 'sphere', 'spherocylinder', 'polyhedron', 'custom_polyhedron'."
+                "Supported shapes are: 'sphere', 'sphero_cylinder', 'polyhedron', 'custom_polyhedron'."
             )
         
     shape_obj.particle2rocky(
@@ -472,12 +539,6 @@ def gen_particle():
         material=materials['particle_mat'],
         rolling_friction=params_dict['rolling_friction']
     )
-
-    # Give Rocky surface energy if available
-    if (surf_energy := params_dict['adhesion'].get('p_surface_energy')):
-        particle.SetSurfaceEnergy(surf_energy, 'J/m2')
-
-
 
 def animate_walls():
     """
@@ -497,46 +558,31 @@ def animate_walls():
     # )
 
     topwall_motions = topwall_frame.GetMotions()
+    fill_end, settle_end, compression_end, shear_end = phase_times()
 
     # Handling the free body motion
+    # The wall is held until halfway through settling so the poured bed
+    # comes to rest before the wall is lowered onto it
     freebody_motion = topwall_motions.New()
     freebody_motion.SetType('Free Body Translation')
     freebody = freebody_motion.GetTypeObject()
     freebody.SetFreeMotionDirection('y')
-    if INSERTIONS:
-        freebody_motion.SetStartTime(T_FILL + 0.25)
-    else:
-        freebody_motion.SetStartTime(0)
-
-    freebody_motion.SetStopTime(
-        sum([
-            params_dict['t_settle'],
-            params_dict['t_compression'],
-            params_dict['t_shear']
-        ])
-    )
+    freebody_motion.SetStartTime(fill_end + params_dict['t_settle'] / 2)
+    freebody_motion.SetStopTime(shear_end)
 
     # Compression motion for the top wall
+    # The force ramps up in steps over the first half of the compression
+    # phase, as a step load makes the wall bounce off the bed
     wall_mass = walls[0].GetBoundaryMass()
-    force_magnitude = (params_dict['sigma_pre'] - wall_mass * 9.81) \
-        * params_dict['particle_box_len']**2
-    force_motion = topwall_motions.New()
-    force_motion.SetType('Additional Force')
-
-    add_force = force_motion.GetTypeObject()
-    add_force.SetForceValue([0, -force_magnitude, 0], 'N')
-    if INSERTIONS:
-        force_motion.SetStartTime(T_FILL + 0.35)
-    else:
-        force_motion.SetStartTime(params_dict['t_settle'])
-        
-    force_motion.SetStopTime(
-        sum([
-            params_dict['t_settle'],
-            params_dict['t_compression'],
-            params_dict['t_shear']
-        ])
-    )
+    force_magnitude = target_force(params_dict['sigma_pre'], wall_mass)
+    for t_start, t_stop, force in load_steps(
+            force_magnitude, settle_end, params_dict['t_compression'] / 2, shear_end):
+        force_motion = topwall_motions.New()
+        force_motion.SetType('Additional Force')
+        add_force = force_motion.GetTypeObject()
+        add_force.SetForceValue([0, -force, 0], 'N')
+        force_motion.SetStartTime(t_start)
+        force_motion.SetStopTime(t_stop)
 
     topwall_frame.ApplyTo(walls[0])
 
@@ -553,25 +599,14 @@ def animate_walls():
         'm/s'
     )
 
-    shearing_motion_bottom.SetStartTime(
-        sum([
-            params_dict['t_settle'],
-            params_dict['t_compression']
-        ])
-    )
-    shearing_motion_bottom.SetStopTime(
-        sum([
-            params_dict['t_settle'],
-            params_dict['t_compression'],
-            params_dict['t_shear']
-        ])
-    )
+    shearing_motion_bottom.SetStartTime(compression_end)
+    shearing_motion_bottom.SetStopTime(shear_end)
     bottomwall_frame.ApplyTo(walls[1])
 
 
 def config_domain():
     """
-    Configure the domain settings and periodic coniditions for the simulation.
+    Configure the domain settings and periodic conditions for the simulation.
     """
 
     global study, params_dict
@@ -592,7 +627,7 @@ def config_domain():
     ])
     domain_settings.SetCoordinateLimitsMaxValues([
         (particle_box_len / 2) * 1.5,
-        (particle_box_len / 2) * 1.5,
+        particle_box_len * 1.5,
         (particle_box_len / 2) * 1.5
     ])
 
@@ -622,6 +657,11 @@ def load_modules():
     bcs = module_collection.GetModule('Boundary Collision Statistics')
     bcs.EnableModule()
     bcs.SetModuleProperty('Intensities', value=True)
+
+    contacts_data = study.GetContactData()
+    contacts_data.EnableCollectContactsData()
+    if params_dict['adhesion']['adhesion_model'] != 'none':
+        contacts_data.EnableIncludeAdhesiveContacts()
 
 
 def _select_processor(solver, processor: str) -> None:
@@ -673,11 +713,7 @@ def simulate(autotimestep: bool = True, timestep=None) -> None:
     processor = PROCESSOR
     _select_processor(solver, processor)
 
-    runtime = sum([
-        params_dict['t_settle'],
-        params_dict['t_compression'],
-        params_dict['t_shear']
-    ])
+    runtime = phase_times()[-1]
     solver.SetSimulationDuration(runtime, 's')
 
     if not autotimestep:
@@ -715,11 +751,10 @@ def continue_sim(filename: str):
     project = app.OpenProject(filename)
     study = project.GetStudy()
 
-    if study.CanResumeSimulation():
-        study.ResumeSimulation()
-        project.SaveProject()
+    if not study.CanResumeSimulation():
+        warn("Simulation could not be resumed. Moving to post-processing.")
     else:
-        warn("Simulation cannot be resumed. Moving to post-processing.")
+        study.StartSimulation(delete_results=False)
 
     geometry_collection = study.GetGeometryCollection()
 
@@ -866,7 +901,7 @@ def _new_sim_settings(
     release_motion.SetStopTime(t_release)
     sim_time = t_release
 
-    force_magnitude = sigma * particle_box_len**2
+    force_magnitude = target_force(sigma, top_wall.GetBoundaryMass())
     force_motion = topwall_motions.New()
     force_motion.SetType('Additional Force')
     add_force = force_motion.GetTypeObject()
@@ -1076,13 +1111,14 @@ Rocky --script "$script_file" --headless >> rocky.log
 """
     elif LOC == 'az-gpu':
         slurm_script = f"""#!/bin/bash
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-gpu=4
 #SBATCH --array=1-{n_array}
 #SBATCH --time={n_days}-0
 #SBATCH --gpus=1
 #SBATCH --gpus-per-task=1
 #SBATCH --job-name={job_name}
 #SBATCH -p long-gpu
+#SBATCH --constraint="[volta|ampere|hopper]"
 
 set -e
 
@@ -1127,15 +1163,22 @@ params = {
     "p_youngmod": {{YOUNGMOD_P}},
     "p_poisson": {{POISSON_P}},
     "rolling_model": {{ROLLING_MODEL}},
+    "rolling_friction": {{ROLLING_FRICTION}},
     "pp_dynamic_friction": {{DYNAMIC_FRICTION_PP}},
     "pp_static_friction": {{STATIC_FRICTION_PP}},
     "pp_cor": {{COR_PP}},
+    "pp_tangential_stiffness_ratio": {{TANG_STIFF_RATIO_PP}},
     "pw_dynamic_friction": {{DYNAMIC_FRICTION_PW}},
     "pw_static_friction": {{STATIC_FRICTION_PW}},
     "pw_cor": {{COR_PW}},
+    "pw_tangential_stiffness_ratio": {{TANG_STIFF_RATIO_PW}},
     "normal_force_model": {{NORMAL_MODEL}},
     "tangential_force_model": {{TANG_MODEL}},
-    "adhesion": {{ADHESION_DICT}},
+    "adhesion": {
+        "adhesion_model": "{{ADH_MODEL}}",
+        "pp_surface_energy": {{SURF_EN_PP}},
+        "pw_surface_energy": {{SURF_EN_PW}}
+    },
     "particle_box_len": {{L_BOX}},
     "t_settle": {{T_SETTLE}},
     "t_compression": {{T_COMPRESSION}},
@@ -1176,5 +1219,5 @@ create_new_cases()
 slurm_job(
     job_name="parallel_shear",
     n_array=len(script_paths),
-    n_days=5
+    n_days={{ SHEAR_RUN_DAYS }}
 )

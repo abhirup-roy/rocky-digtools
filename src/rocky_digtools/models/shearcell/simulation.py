@@ -2,24 +2,23 @@
 
 Defines a :class:`Settings` dataclass for storing simulation parameters and a
 :class:`ShearCellSimulation` class that encapsulates the entire
-workflow of configuring, running, and post-processing a uniaxial compression
-test in Ansys Rocky.
+workflow of configuring, running, and post-processing a shear-cell test in
+Ansys Rocky.
 """
 
 import os
 import json
 import glob
-import sqlite3
 import pathlib
 import subprocess
 from typing import Literal, Optional, Any
 from dataclasses import dataclass, asdict, fields, MISSING
 
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import signal, optimize
 
+from ...particles_shapes import normalise_radius
 from .shcell_meshgen import create_meshes, get_mesh_metrics
 from ...pyrocky.helpers import pyrocky_run
 from .. import PyrockySimulation
@@ -27,7 +26,9 @@ from .. import PyrockySimulation
 __all__ = ["Settings", "ShearCellSimulation", "run_shear_point", "aggregate_results"]
 
 
-def _phase_times(t_fill: float, t_settle: float, t_compression: float, t_shear: float, insert: bool) -> tuple[float, float, float, float]:
+def _phase_times(
+    t_fill: float, t_settle: float, t_compression: float, t_shear: float, insert: bool
+) -> tuple[float, float, float, float]:
     """Return cumulative fill, settle, compression, and shear end times."""
     fill_end = t_fill if insert else 0.0
     settle_end = fill_end + t_settle
@@ -38,6 +39,33 @@ def _phase_times(t_fill: float, t_settle: float, t_compression: float, t_shear: 
 def _target_force(sigma: float, area: float, wall_mass: float) -> float:
     """Additional downward force needed for a target normal stress (N)."""
     return sigma * area - wall_mass * 9.81
+
+
+def _default_top_wall_mass(sigma_pre: float, n_shear_points: int, area: float) -> float:
+    """Top wall mass whose weight gives the lowest shear-point stress (kg).
+
+    A heavy lid keeps the free-body wall on the bed; capping it at the lowest
+    shear-point stress keeps the additional force downward for every point.
+    """
+    return sigma_pre / n_shear_points * area / 9.81
+
+
+def _load_steps(
+    force: float, t_start: float, t_ramp: float, t_stop: float, n_steps: int = 10
+) -> list[tuple[float, float, float]]:
+    """Split a linear force ramp into constant ``(start, stop, force)`` stages.
+
+    The last stage holds the full force until ``t_stop``.
+    """
+    dt = t_ramp / n_steps
+    return [
+        (
+            t_start + (k - 1) * dt,
+            t_start + k * dt if k < n_steps else t_stop,
+            force * k / n_steps,
+        )
+        for k in range(1, n_steps + 1)
+    ]
 
 
 @dataclass(slots=True)
@@ -65,6 +93,10 @@ class Settings:
     fric_stat_pw: float
     cor_pw: float
 
+    tang_stiff_ratio_pp: Optional[float] = None
+    tang_stiff_ratio_pw: Optional[float] = None
+    surf_en_pp: float = 0.0
+    surf_en_pw: float = 0.0
     normal_force_model: Literal[
         "linear_hysteresis", "linear_elastic_viscous", "damped_hertzian", "custom"
     ] = "linear_hysteresis"
@@ -77,8 +109,11 @@ class Settings:
     rolling_model: Literal["none", "type_1", "type_3", "custom"] = "none"
     neighbour_search: Literal["BVH", "RegularGrid", "SparseGrid"] = "BVH"
     processor: Literal["CPU", "GPU", "MULTI_GPU"] = "GPU"
-    loc: str = "az-gpu"  # SLURM cluster target: 'bb-cpu', 'az-gpu', or 'custom'
+    loc: str = "az-gpu"  # SLURM cluster preset
+    shear_run_days: int = 5
     t_fill: float = 0.5  # constant fill time for shear template
+    # top wall mass (kg); None gives the lowest shear-point stress as dead weight
+    top_wall_mass: Optional[float] = None
 
     mesh_dir: Optional[str | pathlib.Path] = None
     plots_dir: Optional[str | pathlib.Path] = None
@@ -96,6 +131,8 @@ class Settings:
     smoothness: Optional[float] = None
 
     def __post_init__(self):
+        self.p_radius = normalise_radius(self.p_radius)
+        generate_mesh = self.mesh_dir is None
         if self.mesh_dir is None:
             self.mesh_dir = (
                 pathlib.Path(self.project_dir).parent
@@ -104,10 +141,12 @@ class Settings:
         else:
             self.mesh_dir = pathlib.Path(self.mesh_dir)
 
-        if not self.mesh_dir.exists():
+        if generate_mesh or not self.mesh_dir.exists():
             create_meshes(
                 size=self.particle_box_len,
                 out_dir=self.mesh_dir,
+                t_shear=self.t_shear,
+                shear_vel=self.shear_vel,
             )
 
         if not self.plots_dir:
@@ -161,6 +200,8 @@ class Settings:
             "fric_stat_pp": self.fric_stat_pp,
             "fric_dyn_pw": self.fric_dyn_pw,
             "fric_stat_pw": self.fric_stat_pw,
+            "surf_en_pp": self.surf_en_pp,
+            "surf_en_pw": self.surf_en_pw,
             "rolling_fric": self.rolling_fric,
             "vert_ar": self.vert_ar,
             "horiz_ar": self.horiz_ar,
@@ -169,24 +210,12 @@ class Settings:
             if val < 0:
                 errors.append(f"'{name}' must be >= 0, got {val}.")
 
-        if isinstance(self.p_radius, float):
-            if self.p_radius <= 0:
-                errors.append(f"'p_radius' must be > 0, got {self.p_radius}.")
-        elif isinstance(self.p_radius, dict):
-            if not self.p_radius:
-                errors.append("'p_radius' dict must not be empty.")
-            else:
-                if any(r <= 0 for r in self.p_radius.keys()):
-                    errors.append("All radii in 'p_radius' dict must be > 0.")
-                prob_sum = sum(self.p_radius.values())
-                if not (np.isclose(prob_sum, 1.0) or np.isclose(prob_sum, 100.0)):
-                    errors.append(
-                        f"'p_radius' probabilities must sum to 1 or 100, got {prob_sum}."
-                    )
-        else:
-            errors.append(
-                f"'p_radius' must be a float or dict, got {type(self.p_radius)}."
-            )
+        for name, val in {
+            "tang_stiff_ratio_pp": self.tang_stiff_ratio_pp,
+            "tang_stiff_ratio_pw": self.tang_stiff_ratio_pw,
+        }.items():
+            if val is not None and val < 0:
+                errors.append(f"'{name}' must be >= 0, got {val}.")
 
         valid_normal = {
             "linear_hysteresis",
@@ -218,6 +247,12 @@ class Settings:
                 f"'adhesion_model' must be one of {valid_adhesion}, "
                 f"got '{self.adhesion_model}'."
             )
+        elif (
+            self.adhesion_model == "JKR" and min(self.surf_en_pp, self.surf_en_pw) <= 0
+        ):
+            errors.append(
+                "'surf_en_pp' and 'surf_en_pw' must be > 0 for the JKR model."
+            )
 
         valid_rolling = {"none", "type_1", "type_3", "custom"}
         if self.rolling_model not in valid_rolling:
@@ -239,14 +274,19 @@ class Settings:
                 f"'processor' must be one of {valid_processor}, got '{self.processor}'."
             )
 
-        valid_loc = {"bb-cpu", "az-gpu", "custom"}
+        valid_loc = {"bb-cpu", "bb-gpu", "az-gpu", "custom"}
         if self.loc not in valid_loc:
             errors.append(f"'loc' must be one of {valid_loc}, got '{self.loc}'.")
+
+        if self.top_wall_mass is not None and self.top_wall_mass <= 0:
+            errors.append(f"'top_wall_mass' must be > 0, got {self.top_wall_mass}.")
 
         if self.n_shear_points < 1:
             errors.append(f"'n_shear_points' must be >= 1, got {self.n_shear_points}.")
         if self.n_procs < 1:
             errors.append(f"'n_procs' must be >= 1, got {self.n_procs}.")
+        if self.shear_run_days < 1:
+            errors.append(f"'shear_run_days' must be >= 1, got {self.shear_run_days}.")
 
         valid_shapes = {"sphere", "polyhedron", "sphero_cylinder", "custom_polyhedron"}
         if self.shape_name not in valid_shapes:
@@ -318,8 +358,8 @@ class Settings:
 
         shape = data["shape"]
         props = data["particle_properties"]
-        inter = data["inseractions"]  # note: typo in JSON preserved
-        exp = data["experim_settings"]
+        inter = data["interactions"]
+        exp = data["experiment_settings"]
         contact = data["contact_model"]
 
         return cls(
@@ -335,14 +375,18 @@ class Settings:
             p_density=props["density"],
             p_poisson=props["poisson"],
             p_youngmod=props["youngmod"],
+            rolling_fric=props.get("fric_rolling", 0.0),
             # Interactions
             fric_dyn_pp=inter["pp"]["fric_dyn"],
             fric_stat_pp=inter["pp"]["fric_stat"],
             cor_pp=inter["pp"]["cor"],
-            rolling_fric=inter["pp"].get("fric_rolling", 0.0),
+            tang_stiff_ratio_pp=inter["pp"].get("tang_stiff_ratio"),
+            surf_en_pp=inter["pp"].get("surf_en", 0.0),
             fric_dyn_pw=inter["pw"]["fric_dyn"],
             fric_stat_pw=inter["pw"]["fric_stat"],
             cor_pw=inter["pw"]["cor"],
+            tang_stiff_ratio_pw=inter["pw"].get("tang_stiff_ratio"),
+            surf_en_pw=inter["pw"].get("surf_en", 0.0),
             # Experiment settings
             particle_box_len=exp["box_len"],
             t_settle=exp["t_settle"],
@@ -353,6 +397,7 @@ class Settings:
             neighbour_search=exp["neighbour_search"],
             t_shear=exp["t_shear"],
             shear_vel=exp["shear_vel"],
+            top_wall_mass=exp.get("top_wall_mass"),
             # Contact models
             normal_force_model=contact["normal"],
             tangential_force_model=contact["tangential"],
@@ -405,8 +450,8 @@ class ShearCellSimulation(PyrockySimulation):
        (:meth:`slurm_job`); each array task calls
        :func:`run_shear_point`.
     3. **Aggregate** — once every array task has written its shear stress,
-       :func:`aggregate_results` fits the Mohr circles and dumps the
-       flow-function metrics to a SQLite database.
+       :func:`aggregate_results` fits the Mohr circles and computes the
+       flow-function metrics.
 
     Args:
         settings: Simulation parameters as a :class:`Settings` instance.
@@ -463,13 +508,18 @@ class ShearCellSimulation(PyrockySimulation):
         )[0]
         top_wall.SetName("Compression Wall 1")
 
+        p = self.settings
         mesh_metrics = get_mesh_metrics(str(top_wall_path))
-        top_wall.SetPrincipalMomentOfInertia(mesh_metrics["pmoment_inertia"])
+        wall_mass = p.top_wall_mass or _default_top_wall_mass(
+            p.sigma_pre, p.n_shear_points, p.particle_box_len**2
+        )
+        # scale the inertia with the mass so the two stay consistent
+        inertia = np.asarray(mesh_metrics["pmoment_inertia"]) * (
+            wall_mass / mesh_metrics["mass"]
+        )
+        top_wall.SetPrincipalMomentOfInertia(inertia.tolist())
         top_wall.SetGravityCenter(mesh_metrics["cog"])
-        top_wall.SetBoundaryMass(mesh_metrics["volume"] * 2700.0)
-
-        if insert:
-            top_wall.SetEnableTime(self.settings.t_fill + 0.25)
+        top_wall.SetBoundaryMass(wall_mass)
 
         bottom_wall_path = mesh_dir / "bottomwall.stl"
         bottom_wall = self._study.ImportWall(
@@ -483,7 +533,7 @@ class ShearCellSimulation(PyrockySimulation):
         if insert:
             insert_path = (mesh_dir / "insert.stl").resolve()
             insert_inlet = self._study.ImportSurface(
-                str(insert_path), import_scale=1.0, convert_yz=False
+                str(insert_path), import_scale=0.98, convert_yz=False
             )[0]
             insert_inlet.SetName("Insert Inlet")
             self._mesh["insert_inlet"] = insert_inlet
@@ -504,7 +554,7 @@ class ShearCellSimulation(PyrockySimulation):
             [(-box / 2) * 1.5, (-box / 2) * 1.5, (-box / 2) * 1.5]
         )
         domain_settings.SetCoordinateLimitsMaxValues(
-            [(box / 2) * 1.5, (box / 2) * 1.5, (box / 2) * 1.5]
+            [(box / 2) * 1.5, box * 1.5, (box / 2) * 1.5]
         )
 
         domain_settings.SetCartesianPeriodicDirections("XZ")
@@ -515,10 +565,12 @@ class ShearCellSimulation(PyrockySimulation):
     def move_walls(self, insert: bool = True) -> None:
         """Apply motion frames to the top (compression) and bottom (shear) walls.
 
-        The top wall gets a free-body translation (settling) plus an
-        additional compressive force held for the whole pre-shear.  The
-        bottom wall gets a fixed-velocity translation along ``Z`` during the
-        shear phase.
+        The top wall is held in place until halfway through the settle phase,
+        so the poured bed can come to rest, and then gets a free-body
+        translation.  From the end of settling, an additional compressive
+        force ramps up in steps over the first half of the compression phase
+        and is then held for the rest of the pre-shear.  The bottom wall gets
+        a fixed-velocity translation along ``Z`` during the shear phase.
 
         Args:
             insert: If ``True``, timing accounts for the fill phase.
@@ -538,17 +590,20 @@ class ShearCellSimulation(PyrockySimulation):
         fill_end, settle_end, compression_end, shear_end = _phase_times(
             p.t_fill, p.t_settle, p.t_compression, p.t_shear, insert
         )
-        free_body_motion.SetStartTime(fill_end)
+        free_body_motion.SetStartTime(fill_end + p.t_settle / 2)
         free_body_motion.SetStopTime(shear_end)
 
         wall_mass = self._mesh["top_wall"].GetBoundaryMass()
         force_magnitude = _target_force(p.sigma_pre, p.particle_box_len**2, wall_mass)
-        force_motion = top_motions.New()
-        force_motion.SetType("Additional Force")
-        add_force = force_motion.GetTypeObject()
-        add_force.SetForceValue([0, -force_magnitude, 0], "N")
-        force_motion.SetStartTime(settle_end)
-        force_motion.SetStopTime(shear_end)
+        for t_start, t_stop, force in _load_steps(
+            force_magnitude, settle_end, p.t_compression / 2, shear_end
+        ):
+            force_motion = top_motions.New()
+            force_motion.SetType("Additional Force")
+            add_force = force_motion.GetTypeObject()
+            add_force.SetForceValue([0, -force, 0], "N")
+            force_motion.SetStartTime(t_start)
+            force_motion.SetStopTime(t_stop)
 
         top_frame.ApplyTo(self._ser(self._mesh["top_wall"]))
 
@@ -567,11 +622,16 @@ class ShearCellSimulation(PyrockySimulation):
         bottom_frame.ApplyTo(self._ser(self._mesh["bottom_wall"]))
 
     def load_modules(self):
-        """Enable the Boundary Collision Statistics module for power input."""
+        """Enable collision statistics and adhesive-contact reporting."""
         module_collection = self._study.GetModuleCollection()
         bcs = module_collection.GetModule("Boundary Collision Statistics")
         bcs.EnableModule()
         bcs.SetModuleProperty("Intensities", value=True)
+
+        contacts_data = self._study.GetContactData()
+        contacts_data.EnableCollectContactsData()
+        if self.settings.adhesion_model != "none":
+            contacts_data.EnableIncludeAdhesiveContacts()
 
     def _select_processor(self, solver):
         """Select the simulation processor, writing a warning file on fallback.
@@ -617,7 +677,9 @@ class ShearCellSimulation(PyrockySimulation):
         solver = self._study.GetSolver()
         self._select_processor(solver)
 
-        runtime = _phase_times(p.t_fill, p.t_settle, p.t_compression, p.t_shear, insert)[-1]
+        runtime = _phase_times(
+            p.t_fill, p.t_settle, p.t_compression, p.t_shear, insert
+        )[-1]
         solver.SetSimulationDuration(runtime, "s")
 
         if not adaptive_ts:
@@ -695,6 +757,10 @@ class ShearCellSimulation(PyrockySimulation):
         np.save(self._outputs_dir / "shear_stresses.npy", tau_arr)
 
         return tau_avg
+
+    post_process = (
+        compute_preshear_stress  # alias for consistency with PyrockySimulation
+    )
 
     #  Shear-point case generation
     def _new_sim_settings(self, sigma: float) -> None:
@@ -834,6 +900,11 @@ class ShearCellSimulation(PyrockySimulation):
                 "module load bear-apps/2023a\n"
                 "module load ANSYS_Rocky/2024R2.0"
             ),
+            "bb-gpu": (
+                "module purge; module load bluebear\n"
+                "module load bear-apps/2024a\n"
+                "module load ANSYS_Rocky/2025R2"
+            ),
             "az-gpu": "ml rocky/25.2.0",
             "custom": "",
         }
@@ -851,9 +922,16 @@ class ShearCellSimulation(PyrockySimulation):
                 "#SBATCH --qos=bbdefault\n"
                 "#SBATCH --mail-type=ALL\n"
             )
+        elif p.loc == "bb-gpu":
+            header = (
+                header_common + "#SBATCH --ntasks=1\n"
+                "#SBATCH --gres=gpu:1\n"
+                "#SBATCH --qos=bbgpu\n"
+                "#SBATCH --cpus-per-task=4\n"
+            )
         elif p.loc == "az-gpu":
             header = (
-                header_common + "#SBATCH --cpus-per-task=1\n"
+                header_common + "#SBATCH --cpus-per-task=4\n"
                 "#SBATCH --gpus=1\n"
                 "#SBATCH --gpus-per-task=1\n"
                 "#SBATCH -p long-gpu\n"
@@ -949,7 +1027,9 @@ class ShearCellSimulation(PyrockySimulation):
         """
         tau_pre = self.execute_preshear(adaptive_ts=adaptive_ts)
         case_dirs = self.create_new_cases()
-        script_path = self.slurm_job(submit=submit_array)
+        script_path = self.slurm_job(
+            n_days=self.settings.shear_run_days, submit=submit_array
+        )
 
         return {
             "tau_pre": tau_pre,
@@ -1001,7 +1081,7 @@ def run_shear_point(case_dir: str, rocky: Any = None) -> float:
         solver.SetNumberOfProcessors(n_cpus)
 
     if (not study.HasResults()) or study.CanResumeSimulation():
-        study.StartSimulation(skip_summary=True)
+        study.StartSimulation(skip_summary=True, delete_results=False)
         while study.IsSimulating():
             study.RefreshResults()
             print(f"Simulation Progress: {study.GetProgress():.2f} %", flush=True)
@@ -1037,7 +1117,9 @@ def run_shear_point(case_dir: str, rocky: Any = None) -> float:
 
     result_path = case_dir / "result.json"
     temp_path = result_path.with_suffix(".tmp")
-    temp_path.write_text(json.dumps({"sigma": sigma, "sigma_idx": sigma_idx, "tau": tau_avg}))
+    temp_path.write_text(
+        json.dumps({"sigma": sigma, "sigma_idx": sigma_idx, "tau": tau_avg})
+    )
     temp_path.replace(result_path)
 
     return tau_avg
@@ -1141,22 +1223,19 @@ def _force_fit(sigma: np.ndarray, tau: np.ndarray):
 def aggregate_results(
     project_dir: str | pathlib.Path,
     plot: bool = True,
-    db_path: str | pathlib.Path | None = None,
 ) -> dict:
     """Fit Mohr circles to the collected shear stresses and dump metrics.
 
     Loads ``pyoutputs/sigma.npy`` and ``pyoutputs/shear_stresses.npy`` from
     ``project_dir``; if any shear point is still zero the function returns
     ``None`` (the array job is not done yet).  Otherwise it fits the yield
-    locus (regression line → straight sections → constrained force-fit),
-    plots the Mohr circles, and appends a row to a SQLite database.
+    locus (regression line → straight sections → constrained force-fit)
+    and plots the Mohr circles.
 
     Args:
         project_dir: Directory containing the ``pyoutputs/`` folder and
             ``params.json``.
         plot: If ``True``, save the Mohr-circle figure.  Defaults to ``True``.
-        db_path: SQLite database path.  Defaults to
-            ``<project_dir>/../results.db``.
 
     Returns:
         A dict of computed flow metrics (``ffc``, ``sigma_unc``,
@@ -1173,7 +1252,11 @@ def aggregate_results(
             return None
         result = json.loads(result_path.read_text())
         idx = result.get("sigma_idx")
-        if not isinstance(idx, int) or not 0 < idx < len(tau) or result.get("sigma") != sigma[idx]:
+        if (
+            not isinstance(idx, int)
+            or not 0 < idx < len(tau)
+            or result.get("sigma") != sigma[idx]
+        ):
             raise ValueError(f"Invalid shear result provenance: {result_path}")
         tau[idx] = result.get("tau", np.nan)
 
@@ -1181,6 +1264,7 @@ def aggregate_results(
         raise ValueError("At least three matching shear stress points are required.")
     if not np.isfinite(sigma).all() or not np.isfinite(tau).all():
         return None
+    np.save(outputs_dir / "shear_stresses.npy", tau)
 
     if (result := _regression_line(sigma, tau)) is not None:
         method = "regression_line"
@@ -1284,17 +1368,6 @@ def aggregate_results(
         "phi_eff": float(phi_eff),
         "fit_method": method,
     }
-
-    if db_path is None:
-        db_path = project_dir.parent / "results.db"
-    with open(project_dir / "params.json") as f:
-        params = json.load(f)
-    df = pd.json_normalize(params)
-    df.columns = [col.split(".")[-1] if "." in col else col for col in df.columns]
-    for k, v in metrics.items():
-        df[k] = v
-    with sqlite3.connect(str(db_path)) as conn:
-        df.to_sql("parallel_shear", conn, if_exists="append", index=False)
 
     return metrics
 

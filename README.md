@@ -1,11 +1,11 @@
-# Rocky-UniaxC: Multiscale Uniaxial Compression Simulation Toolkit for Ansys Rocky
+# Rocky Digital Tools: Multiscale Simulation Toolkit for Ansys Rocky
 
-[![Build and Test](https://github.com/abhirup-roy/rocky-uniaxc/actions/workflows/ci.yml/badge.svg)](https://github.com/abhirup-roy/rocky-uniaxc/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/rocky-uniaxc.svg)](https://pypi.org/project/rocky-uniaxc/)
+[![Build and Test](https://github.com/abhirup-roy/rocky-digtools/actions/workflows/ci.yml/badge.svg)](https://github.com/abhirup-roy/rocky-digtools/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/rocky-digtools.svg)](https://pypi.org/project/rocky-digtools/)
 ![Python Versions](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue?logo=python)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-`rocky-uniaxc` is a Python toolkit designed to automate the configuration, mesh generation, execution, and analysis of multiscale uniaxial compression simulations in **Ansys Rocky DEM**. It supports running simulations locally or deploying parallel job arrays on HPC clusters (like BlueBear or SCP) using SLURM.
+`rocky-digtools` is a Python toolkit designed to automate the configuration, mesh generation, execution, and analysis of multiscale simulations in **Ansys Rocky DEM**. It supports running simulations locally or deploying parallel job arrays on HPC clusters (like BlueBear or SCP) using SLURM.
 
 ---
 
@@ -38,7 +38,7 @@
 Install the latest release directly from PyPI:
 
 ```bash
-pip install rocky-uniaxc
+pip install rocky-digtools
 ```
 
 ### From Source
@@ -98,7 +98,7 @@ Define your parameter space in a JSON config file (e.g., `sweep_config.json`):
     "poisson": [0.25],
     "youngmod": [1e7]
   },
-  "inseractions": {
+  "interactions": {
     "pp": {
       "fric_dyn": [0.3, 0.5],
       "fric_stat": [0.4],
@@ -111,7 +111,7 @@ Define your parameter space in a JSON config file (e.g., `sweep_config.json`):
       "cor": [0.5]
     }
   },
-  "experim_settings": {
+  "experiment_settings": {
     "box_len": [0.1],
     "p_compress": [1000]
   },

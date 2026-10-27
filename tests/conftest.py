@@ -145,7 +145,7 @@ def sweep_json(tmp_path):
                 "vert_ar": 1,
                 "horiz_ar": 1,
                 "n_corners": 6,
-                "sq_degrees": 2.0,
+                "sq_degree": 2.0,
             }
         ],
         "particle_properties": {
@@ -154,7 +154,7 @@ def sweep_json(tmp_path):
             "poisson": [0.25],
             "youngmod": [5e6],
         },
-        "inseractions": {
+        "interactions": {
             "pp": {
                 "fric_dyn": [0.5],
                 "fric_stat": [0.3],
@@ -168,7 +168,7 @@ def sweep_json(tmp_path):
                 "cor": [0.9],
             },
         },
-        "experim_settings": {"box_len": [0.01, 0.02], "p_compress": [1000.0]},
+        "experiment_settings": {"box_len": [0.01, 0.02], "p_compress": [1000.0]},
         "contact_model": {
             "normal": ["linear_hysteresis"],
             "tangential": ["coulomb_limit"],
@@ -198,11 +198,11 @@ def ofat_json(tmp_path):
             "poisson": 0.25,
             "youngmod": 5e6,
         },
-        "inseractions": {
+        "interactions": {
             "pp": {"fric_dyn": 0.7, "fric_stat": 0.3, "fric_rolling": 0.1, "cor": 0.4},
             "pw": {"fric_dyn": 0.7, "fric_stat": 0.3, "fric_rolling": 0.1, "cor": 0.4},
         },
-        "experim_settings": {"box_len": 0.0025, "p_compress": 15e3},
+        "experiment_settings": {"box_len": 0.0025, "p_compress": 15e3},
         "contact_model": {
             "normal": "linear_hysteresis",
             "tangential": "coulomb_limit",

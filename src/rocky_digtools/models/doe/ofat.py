@@ -27,12 +27,17 @@ _COMMON_KEY_MAP = {
     "density": "DENSITY_P",
     "poisson": "POISSON_P",
     "youngmod": "YOUNGMOD_P",
+    "fric_rolling": "ROLLING_FRICTION",
     "fric_dyn_pp": "DYNAMIC_FRICTION_PP",
     "fric_stat_pp": "STATIC_FRICTION_PP",
     "cor_pp": "COR_PP",
+    "tang_stiff_ratio_pp": "TANG_STIFF_RATIO_PP",
+    "surf_en_pp": "SURF_EN_PP",
     "fric_dyn_pw": "DYNAMIC_FRICTION_PW",
     "fric_stat_pw": "STATIC_FRICTION_PW",
     "cor_pw": "COR_PW",
+    "tang_stiff_ratio_pw": "TANG_STIFF_RATIO_PW",
+    "surf_en_pw": "SURF_EN_PW",
     "box_len": "L_BOX",
     "normal": "NORMAL_MODEL",
     "tangential": "TANG_MODEL",
@@ -153,7 +158,18 @@ def launch_ofat(
     for size in tqdm(unique_sizes, desc="Generating meshes", unit="mesh"):
         shared_mesh_dir = sweep_path / f"meshes_{size}"
         shared_mesh_dir.mkdir(parents=True, exist_ok=True)
-        runtime.create_meshes(size, meshsize=0.01, out_dir=str(shared_mesh_dir))
+        mesh_kwargs = {}
+        if runtime.mesh_kwargs:
+            cases = []
+            for _, row in experiments_df.iterrows():
+                case = {var: row[var] for var in vars_list}
+                case.update(base_dict)
+                if case["box_len"] == size:
+                    cases.append(case)
+            mesh_kwargs = runtime.mesh_kwargs(cases)
+        runtime.create_meshes(
+            size, meshsize=0.01, out_dir=str(shared_mesh_dir), **mesh_kwargs
+        )
         size_to_mesh_dir[size] = shared_mesh_dir
 
     for i, row in tqdm(
@@ -168,14 +184,14 @@ def launch_ofat(
         exp_dict = {var: row[var] for var in vars_list}
         exp_dict.update(base_dict)
 
-        script_contxt = {
+        script_context = {
             script_key: exp_dict[field_name]
             for field_name, script_key in _COMMON_KEY_MAP.items()
         }
         for field_name, script_key in runtime.extra_key_map.items():
-            script_contxt[script_key] = exp_dict[field_name]
+            script_context[script_key] = exp_dict[field_name]
 
-        script_contxt.update(
+        script_context.update(
             {
                 "VERT_AR": exp_dict.get("vert_ar"),
                 "HORIZ_AR": exp_dict.get("horiz_ar"),
@@ -189,14 +205,12 @@ def launch_ofat(
             }
         )
 
-        if exp_dict["rolling"] != "none":
-            script_contxt["ROLLING_FRICTION"] = exp_dict["fric_rolling_pp"]
-        else:
-            script_contxt["ROLLING_FRICTION"] = 0
+        if exp_dict["rolling"] == "none":
+            script_context["ROLLING_FRICTION"] = 0
 
         prepare_case(
             case_dir,
-            script_contxt,
+            script_context,
             backend,
             runtime,
             rocky_template,

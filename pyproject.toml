@@ -51,6 +51,10 @@ docs = [
     "mkdocs-dracula-theme>=1.0.0",
     "mkdocstrings[python]>=0.24.0",
 ]
+xtras = [
+    "coexist",
+    "medeq",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -58,3 +62,7 @@ addopts = "-v --tb=short"
 
 [tool.setuptools.package-data]
 rocky_digtools = ["py.typed"]
+
+[tool.uv.sources]
+coexist = { git = "https://github.com/uob-positron-imaging-centre/ACCES-CoExSiST.git" }
+medeq = { git = "https://github.com/uob-positron-imaging-centre/MED" }

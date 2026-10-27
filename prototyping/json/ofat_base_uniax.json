@@ -12,7 +12,7 @@
         "poisson": 0.25,
         "youngmod": 5e6
     },
-    "inseractions": {
+    "interactions": {
         "pp": {
             "fric_dyn": 0.7,
             "fric_stat": 0.3,
@@ -26,7 +26,7 @@
             "cor": 0.4
         }
     },
-    "experim_settings": {
+    "experiment_settings": {
         "box_len": 0.0025,
         "p_compress": 15e3
     },

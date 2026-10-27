@@ -1,9 +1,16 @@
+import fcntl
 import os
 import pathlib
+import warnings
 
 import gmsh
 import numpy as np
 from stl.mesh import Mesh
+
+
+def required_plate_length(box_width: float, t_shear: float, shear_vel: float) -> float:
+    """Cover the box plus pre-shear and one parallel-shear translation."""
+    return (box_width + shear_vel * (2 * t_shear)) * 1.1
 
 
 class ParallelPlateMesh:
@@ -27,7 +34,7 @@ class ParallelPlateMesh:
         Length of the plate (in meters).
         DEFAULT: 1.0
     mesh_size : float
-        Mesh siaze in gmsh
+        Mesh size in Gmsh.
         DEFAULT: 0.001
     save_dir : str
         Directory to save the generated mesh files.
@@ -57,23 +64,29 @@ class ParallelPlateMesh:
         save_dir: str = "meshes",
         run: bool = True,
         bottom_vanes: bool = True,
-        top_mvt: bool = False,
         best_mesh_length: bool = True,
         vane_thickness: float = 1e-5,
+        t_shear: float = 5.0,
+        shear_vel: float = 30 / 60_000,
     ):
         self.box_width = box_width
         self.mesh_size = mesh_size
         self.h_vane_frac = h_vane_frac
         self.h_vane = box_width * h_vane_frac
-        self.plate_length = plate_length
+        # Keep the fill floor fixed while starting the top teeth above the inlet.
+        self.bottom_wall_y = -box_width / 2
+        self.top_wall_y = box_width
+        self.inlet_y = box_width * 5 / 8
+        self.plate_length: int | float = plate_length
         self.save_dir = save_dir
         self.bottom_vanes = bottom_vanes
         self.l_vanes_frac = l_vanes_frac
-        self.top_mvt = top_mvt
         self.vane_thickness = vane_thickness
 
         if best_mesh_length:
-            self.plate_length = self._best_mesh_length(box_width, max_sim_dur=5)
+            self.plate_length = self._best_mesh_length(
+                box_width, t_shear=t_shear, shear_vel=shear_vel
+            )
 
         if run:
             self.gen_topwall(gui=False)
@@ -92,14 +105,9 @@ class ParallelPlateMesh:
             DEFAULT: False
         """
         # Determine z-interval for the top wall based on top_mvt
-        if self.top_mvt:
-            # Moving top: wall spans from z = box_width/2 - plate_length to z = box_width/2
-            z1 = self.box_width / 2.0
-            z0 = z1 - self.plate_length
-        else:
-            # Centered top: wall spans from -plate_length/2 to +plate_length/2
-            z0 = -self.plate_length / 2.0
-            z1 = +self.plate_length / 2.0
+        # Centered top: wall spans from -plate_length/2 to +plate_length/2
+        z0 = -self.box_width / 2.0
+        z1 = +self.box_width / 2.0
         # Geometry parameters
         box_w = self.box_width
         l_vane = self.l_vanes_frac * self.box_width
@@ -111,7 +119,7 @@ class ParallelPlateMesh:
 
         plane = gmsh.model.occ.addBox(
             x=-self.box_width / 2,
-            y=self.box_width / 2,
+            y=self.top_wall_y,
             z=z0,
             dx=box_w,
             dy=5e-4,
@@ -122,11 +130,11 @@ class ParallelPlateMesh:
         l_vane = self.l_vanes_frac * self.box_width
         vane_range = np.arange(start=z0, stop=z1, step=l_vane)
 
-        for l in vane_range:
+        for z in vane_range:
             vane = gmsh.model.occ.addBox(
                 x=-box_w / 2,
-                y=self.box_width / 2,
-                z=l,
+                y=self.top_wall_y,
+                z=z,
                 dx=box_w,
                 dy=-self.h_vane,
                 dz=self.vane_thickness,
@@ -169,26 +177,26 @@ class ParallelPlateMesh:
 
         p1 = gmsh.model.geo.addPoint(
             self.box_width / 2,
-            -self.box_width / 2,
+            self.bottom_wall_y,
             endpoints[0],
             meshSize=self.mesh_size,
         )
         p2 = gmsh.model.geo.addPoint(
             -self.box_width / 2,
-            -self.box_width / 2,
+            self.bottom_wall_y,
             endpoints[0],
             meshSize=self.mesh_size,
         )
         p3 = gmsh.model.geo.addPoint(
             -self.box_width / 2,
-            -self.box_width / 2,
+            self.bottom_wall_y,
             endpoints[1],
             meshSize=self.mesh_size,
         )
 
         p4 = gmsh.model.geo.addPoint(
             self.box_width / 2,
-            -self.box_width / 2,
+            self.bottom_wall_y,
             endpoints[1],
             meshSize=self.mesh_size,
         )
@@ -210,25 +218,25 @@ class ParallelPlateMesh:
             for length_coord in vane_range:
                 vane_p1 = gmsh.model.geo.addPoint(
                     self.box_width / 2,
-                    -self.box_width / 2,
+                    self.bottom_wall_y,
                     length_coord,
                     meshSize=self.mesh_size,
                 )
                 vane_p2 = gmsh.model.geo.addPoint(
                     self.box_width / 2,
-                    -self.box_width / 2 + self.h_vane,
+                    self.bottom_wall_y + self.h_vane,
                     length_coord,
                     meshSize=self.mesh_size,
                 )
                 vane_p3 = gmsh.model.geo.addPoint(
                     -self.box_width / 2,
-                    -self.box_width / 2 + self.h_vane,
+                    self.bottom_wall_y + self.h_vane,
                     length_coord,
                     meshSize=self.mesh_size,
                 )
                 vane_p4 = gmsh.model.geo.addPoint(
                     -self.box_width / 2,
-                    -self.box_width / 2,
+                    self.bottom_wall_y,
                     length_coord,
                     meshSize=self.mesh_size,
                 )
@@ -257,40 +265,40 @@ class ParallelPlateMesh:
             gmsh.write(os.path.join(save_dir, "bottomwall.stl"))
         gmsh.finalize()
 
-    def _best_mesh_length(self, box_width: float, max_sim_dur: float = 5) -> float:
-        max_speed = 30 / 60_000  # 30 mm/min
-        # ensure enough length for 2 shear cycles
-        max_length = (max_speed * max_sim_dur) * 2 + box_width
-        max_length *= 1.1  # add 10% for safety
-
-        return max_length
+    def _best_mesh_length(
+        self, box_width: float, t_shear: float, shear_vel: float
+    ) -> float:
+        return required_plate_length(box_width, t_shear, shear_vel)
 
     def gen_insert(self, gui: bool = False):
         gmsh.initialize()
         gmsh.model.add("insert")
 
+        # The inlet stays above the fill box and below the raised top-wall teeth.
+        inlet_y = self.inlet_y
+
         p1 = gmsh.model.geo.addPoint(
             self.box_width / 2,
-            self.box_width / 2 * 1.45,
+            inlet_y,
             self.box_width / 2,
             meshSize=self.mesh_size,
         )
         p2 = gmsh.model.geo.addPoint(
             -self.box_width / 2,
-            self.box_width / 2 * 1.45,
+            inlet_y,
             self.box_width / 2,
             meshSize=self.mesh_size,
         )
         p3 = gmsh.model.geo.addPoint(
             -self.box_width / 2,
-            self.box_width / 2 * 1.45,
+            inlet_y,
             -self.box_width / 2,
             meshSize=self.mesh_size,
         )
 
         p4 = gmsh.model.geo.addPoint(
             self.box_width / 2,
-            self.box_width / 2 * 1.45,
+            inlet_y,
             -self.box_width / 2,
             meshSize=self.mesh_size,
         )
@@ -322,6 +330,8 @@ def create_meshes(
     size: float,
     meshsize: float = 0.001,
     out_dir: str | pathlib.Path = "meshes",
+    t_shear: float = 5.0,
+    shear_vel: float = 30 / 60_000,
 ) -> ParallelPlateMesh:
     """Create the parallel-plate shear-cell meshes and save them to disk.
 
@@ -332,21 +342,42 @@ def create_meshes(
         size: Box width of the shear-cell domain (m).
         meshsize: Desired mesh resolution. Defaults to 0.001.
         out_dir: Directory to save the meshes. Defaults to ``"meshes"``.
+        t_shear: Duration of each shear phase (s). The plate accommodates two
+            phases: pre-shear and one subsequent parallel shear.
+        shear_vel: Bottom-wall shear velocity (m/s).
     """
     out_dir = pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    plate_length = required_plate_length(size, t_shear, shear_vel)
 
     ppm = ParallelPlateMesh(
         box_width=size,
         mesh_size=meshsize,
         save_dir=str(out_dir.resolve()),
-        run=True,
+        run=False,
+        t_shear=t_shear,
+        shear_vel=shear_vel,
     )
+    with (out_dir / ".create_meshes.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        length_file = out_dir / ".plate_length"
+        try:
+            existing_length = float(length_file.read_text())
+        except (FileNotFoundError, ValueError):
+            existing_length = 0.0
+        if existing_length < plate_length or not all(
+            (out_dir / filename).is_file()
+            for filename in ("topwall.stl", "bottomwall.stl", "insert.stl")
+        ):
+            ppm.gen_topwall(gui=False)
+            ppm.gen_bottomwall(gui=False)
+            ppm.gen_insert(gui=False)
+            length_file.write_text(str(plate_length))
 
     return ppm
 
 
-def get_mesh_metrics(mesh_filepath: str) -> dict:
+def get_mesh_metrics(mesh_filepath: str, density: float = 2700.0) -> dict:
     """
     Get mesh metrics from an STL file.
 
@@ -354,23 +385,40 @@ def get_mesh_metrics(mesh_filepath: str) -> dict:
     ----------
     mesh_filepath : str
         Filepath to the STL mesh file.
+    density : float
+        Material density (kg/m3) used for the mass and inertia.
+        Defaults to 2700 (aluminium).
 
     Returns
     -------
     dict
         A dictionary containing:
         - volume (float): Volume of the mesh.
+        - mass (float): Mass of the mesh at ``density``.
         - cog (list[float]): Center of gravity coordinates [x, y, z].
-        - inertia (list[float]): Inertia tensor components.
+        - pmoment_inertia (list[float]): Moments of inertia [Ixx, Iyy, Izz]
+          about the COG at ``density`` (kg m2).
     """
     mesh = Mesh.from_file(mesh_filepath)
+    # numpy-stl returns the inertia tensor about the COG for unit density
     volume, cog, inertia_mat = mesh.get_mass_properties()
+    inertia_mat = np.asarray(inertia_mat, dtype=float) * density
 
-    pmoment_inert = np.linalg.eig(inertia_mat).eigenvalues
+    # Rocky takes the moments along x, y, z, so the principal axes of the
+    # mesh must be (close to) aligned with them
+    diag = np.diag(inertia_mat)
+    off_diag = inertia_mat - np.diag(diag)
+    if np.abs(off_diag).max() > 1e-2 * np.abs(diag).max():
+        warnings.warn(
+            f"Principal axes of {mesh_filepath} are not aligned with x, y, z; "
+            "using the diagonal of the inertia tensor."
+        )
+
     mesh_metrics = {
         "volume": volume.item(),
+        "mass": volume.item() * density,
         "cog": cog.tolist(),
-        "pmoment_inertia": pmoment_inert.tolist(),
+        "pmoment_inertia": diag.tolist(),
     }
 
     return mesh_metrics

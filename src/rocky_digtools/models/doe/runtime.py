@@ -49,6 +49,8 @@ class ModelRuntime:
             payload for the ``pyrocky`` backend (e.g. compression timings).
         create_meshes: The model's mesh-generation function, called as
             ``create_meshes(size, meshsize=..., out_dir=...)``.
+        mesh_kwargs: Optional model hook that derives extra mesh-generation
+            arguments from cases sharing the same box length.
     """
 
     case_runner_module: str
@@ -58,6 +60,7 @@ class ModelRuntime:
     extra_key_map: dict[str, str]
     settings_extra: Callable[[dict], dict]
     create_meshes: Callable[..., None]
+    mesh_kwargs: Optional[Callable[[list[dict]], dict]] = None
 
 
 @contextmanager
@@ -107,7 +110,7 @@ def script_context_from_params(
     Returns:
         Dictionary of template variables for script rendering.
     """
-    rolling_fric = params.fric_rolling_pp if params.rolling != "none" else 0
+    rolling_fric = params.fric_rolling if params.rolling != "none" else 0
 
     ctx = {
         "RADIUS_P": params.radius,
@@ -117,9 +120,13 @@ def script_context_from_params(
         "DYNAMIC_FRICTION_PP": params.fric_dyn_pp,
         "STATIC_FRICTION_PP": params.fric_stat_pp,
         "COR_PP": params.cor_pp,
+        "TANG_STIFF_RATIO_PP": params.tang_stiff_ratio_pp,
+        "SURF_EN_PP": params.surf_en_pp,
         "DYNAMIC_FRICTION_PW": params.fric_dyn_pw,
         "STATIC_FRICTION_PW": params.fric_stat_pw,
         "COR_PW": params.cor_pw,
+        "TANG_STIFF_RATIO_PW": params.tang_stiff_ratio_pw,
+        "SURF_EN_PW": params.surf_en_pw,
         "L_BOX": params.box_len,
         "NORMAL_MODEL": params.normal,
         "TANG_MODEL": params.tangential,
@@ -146,7 +153,7 @@ def script_context_from_params(
 
 def render_pyrocky_script(
     case_dir: str | Path,
-    script_contxt: dict,
+    script_context: dict,
     runtime: ModelRuntime,
     meshdir: str = "meshes",
     mesh_path: Optional[str | Path] = None,
@@ -158,7 +165,7 @@ def render_pyrocky_script(
 
     Args:
         case_dir: Path to the case directory.
-        script_contxt: Dictionary containing script template variables.
+        script_context: Dictionary containing script template variables.
         runtime: The model's :class:`ModelRuntime`.
         meshdir: Name of the mesh subdirectory (used only when
             ``mesh_path`` is ``None``).
@@ -173,33 +180,37 @@ def render_pyrocky_script(
         mesh_path = str(os.path.abspath(mesh_path))
 
     settings_dict = {
-        "particle_box_len": script_contxt["L_BOX"],
-        "p_radius": script_contxt["RADIUS_P"],
-        "p_density": script_contxt["DENSITY_P"],
-        "p_youngmod": script_contxt["YOUNGMOD_P"],
-        "p_poisson": script_contxt["POISSON_P"],
-        "fric_dyn_pp": script_contxt["DYNAMIC_FRICTION_PP"],
-        "fric_stat_pp": script_contxt["STATIC_FRICTION_PP"],
-        "cor_pp": script_contxt["COR_PP"],
-        "fric_dyn_pw": script_contxt["DYNAMIC_FRICTION_PW"],
-        "fric_stat_pw": script_contxt["STATIC_FRICTION_PW"],
-        "cor_pw": script_contxt["COR_PW"],
-        "normal_force_model": script_contxt["NORMAL_MODEL"].strip('"'),
-        "tangential_force_model": script_contxt["TANG_MODEL"].strip('"'),
-        "adhesion_model": script_contxt["ADH_MODEL"].strip('"'),
-        "rolling_fric": script_contxt.get("ROLLING_FRICTION", 0.0),
-        "rolling_model": script_contxt["ROLLING_MODEL"].strip('"'),
-        "processor": script_contxt["XPU"].strip('"'),
+        "particle_box_len": script_context["L_BOX"],
+        "p_radius": script_context["RADIUS_P"],
+        "p_density": script_context["DENSITY_P"],
+        "p_youngmod": script_context["YOUNGMOD_P"],
+        "p_poisson": script_context["POISSON_P"],
+        "fric_dyn_pp": script_context["DYNAMIC_FRICTION_PP"],
+        "fric_stat_pp": script_context["STATIC_FRICTION_PP"],
+        "cor_pp": script_context["COR_PP"],
+        "tang_stiff_ratio_pp": script_context["TANG_STIFF_RATIO_PP"],
+        "surf_en_pp": script_context["SURF_EN_PP"],
+        "fric_dyn_pw": script_context["DYNAMIC_FRICTION_PW"],
+        "fric_stat_pw": script_context["STATIC_FRICTION_PW"],
+        "cor_pw": script_context["COR_PW"],
+        "tang_stiff_ratio_pw": script_context["TANG_STIFF_RATIO_PW"],
+        "surf_en_pw": script_context["SURF_EN_PW"],
+        "normal_force_model": script_context["NORMAL_MODEL"].strip('"'),
+        "tangential_force_model": script_context["TANG_MODEL"].strip('"'),
+        "adhesion_model": script_context["ADH_MODEL"].strip('"'),
+        "rolling_fric": script_context.get("ROLLING_FRICTION", 0.0),
+        "rolling_model": script_context["ROLLING_MODEL"].strip('"'),
+        "processor": script_context["XPU"].strip('"'),
         "mesh_dir": mesh_path,
-        "shape_name": script_contxt["SHAPE"].strip('"'),
-        "vert_ar": script_contxt["VERT_AR"],
-        "horiz_ar": script_contxt["HORIZ_AR"],
-        "n_corners": script_contxt["N_CORNERS"],
-        "sq_degree": script_contxt["SQ_DEGREE"],
-        "particle_path": script_contxt["PARTICLE_PATH"],
-        "smoothness": script_contxt["SMOOTHNESS"],
+        "shape_name": script_context["SHAPE"].strip('"'),
+        "vert_ar": script_context["VERT_AR"],
+        "horiz_ar": script_context["HORIZ_AR"],
+        "n_corners": script_context["N_CORNERS"],
+        "sq_degree": script_context["SQ_DEGREE"],
+        "particle_path": script_context["PARTICLE_PATH"],
+        "smoothness": script_context["SMOOTHNESS"],
     }
-    settings_dict.update(runtime.settings_extra(script_contxt))
+    settings_dict.update(runtime.settings_extra(script_context))
 
     settings_path = case_dir / "settings.json"
     with open(settings_path, "w") as f:
@@ -220,7 +231,7 @@ subprocess.run(
 
 def prepare_case(
     case_dir: Path,
-    script_contxt: dict,
+    script_context: dict,
     backend: str,
     runtime: ModelRuntime,
     rocky_template: Optional[jinja2.Template] = None,
@@ -230,7 +241,7 @@ def prepare_case(
 
     Args:
         case_dir: Path to the case directory.
-        script_contxt: Script context dictionary for template rendering.
+        script_context: Script context dictionary for template rendering.
         backend: Simulation backend — ``"rocky_prepost"`` or ``"pyrocky"``.
         runtime: The model's :class:`ModelRuntime`.
         rocky_template: Jinja2 template instance. Required when
@@ -248,10 +259,10 @@ def prepare_case(
     if backend == "rocky_prepost":
         if rocky_template is None:
             raise ValueError("rocky_template required for rocky_prepost backend")
-        rendered = rocky_template.render(script_contxt)
+        rendered = rocky_template.render(script_context)
         script_path.write_text(rendered)
     elif backend == "pyrocky":
-        render_pyrocky_script(case_dir, script_contxt, runtime, mesh_path=mesh_path)
+        render_pyrocky_script(case_dir, script_context, runtime, mesh_path=mesh_path)
     else:
         raise ValueError(f"Unknown backend: {backend}")
 

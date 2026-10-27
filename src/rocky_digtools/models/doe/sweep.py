@@ -82,7 +82,9 @@ def launch_sweep(
 
     target_quoted = f'"{target}"'
 
-    rocky_template = load_template(runtime, template_dir) if backend == "rocky_prepost" else None
+    rocky_template = (
+        load_template(runtime, template_dir) if backend == "rocky_prepost" else None
+    )
 
     all_params = list(iter_params(json_path, schema))
     total_cases = len(all_params)
@@ -100,7 +102,17 @@ def launch_sweep(
     for size in tqdm(unique_sizes, desc="Generating meshes", unit="mesh"):
         shared_mesh_dir = sweep_path / f"meshes_{size}"
         shared_mesh_dir.mkdir(parents=True, exist_ok=True)
-        runtime.create_meshes(size, meshsize=0.01, out_dir=str(shared_mesh_dir))
+        mesh_kwargs = {}
+        if runtime.mesh_kwargs:
+            cases = [
+                {"box_len": params.box_len, **params.extra}
+                for params in all_params
+                if params.box_len == size
+            ]
+            mesh_kwargs = runtime.mesh_kwargs(cases)
+        runtime.create_meshes(
+            size, meshsize=0.01, out_dir=str(shared_mesh_dir), **mesh_kwargs
+        )
         size_to_mesh_dir[size] = shared_mesh_dir
 
     for i, params in tqdm(
@@ -112,13 +124,13 @@ def launch_sweep(
         case_dir = case_dirs[i]
         case_dir.mkdir(parents=True, exist_ok=True)
 
-        script_contxt = script_context_from_params(
+        script_context = script_context_from_params(
             params, target_quoted, meshdir, extra_key_map=runtime.extra_key_map
         )
-        script_contxt["SHAPES_MODULE_PATH"] = shapes_module_path
+        script_context["SHAPES_MODULE_PATH"] = shapes_module_path
         prepare_case(
             case_dir,
-            script_contxt,
+            script_context,
             backend,
             runtime,
             rocky_template,

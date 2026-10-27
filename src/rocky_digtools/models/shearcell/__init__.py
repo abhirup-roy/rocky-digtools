@@ -8,6 +8,7 @@ one-factor-at-a-time (OFAT) designs via the shared DOE engine.
 __all__ = [
     "launch_sweep",
     "launch_ofat",
+    "launch_calibration",
     "create_meshes",
     "set_backend",
 ]
@@ -16,6 +17,13 @@ BACKEND = "pyrocky"
 
 from .doe import launch_sweep, launch_ofat
 from .shcell_meshgen import create_meshes
+
+
+def launch_calibration(*args, **kwargs):
+    """Launch ACCES calibration for shear-cell yield-locus matching."""
+    from .calibration import launch_calibration as _launch_calibration
+
+    return _launch_calibration(*args, **kwargs)
 
 
 def set_backend(backend: str) -> None:

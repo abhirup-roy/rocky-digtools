@@ -5,13 +5,10 @@ import os
 import glob
 import json
 import re
-import sqlite3
 
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal, optimize
-
-import pandas as pd
 
 
 sigma_dir = os.getcwd()
@@ -122,6 +119,21 @@ def postprocess(
     tau_arr[sigma_idx] = tau_avg
 
     np.save(os.path.join(outputs_dir, "shear_stresses.npy"), tau_arr)
+
+    result_path = os.path.join(sigma_dir, "result.json")
+    temp_path = result_path + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "sigma": float(sigma_arr[sigma_idx]),
+                "sigma_idx": int(sigma_idx),
+                "tau": float(tau_avg),
+            },
+            f,
+        )
+    os.replace(temp_path, result_path)
+
+    return tau_avg
 
 
 def _regression_line(sigma: np.ndarray, tau: np.ndarray):
@@ -236,7 +248,7 @@ def _force_fit(sigma: np.ndarray, tau: np.ndarray) -> tuple:
 
 def extract_cell_data():
     """
-    Plots Mohr circle and saves data to sqlite database.
+    Plots Mohr circle for the collected shear stresses.
     """
 
     sigma = np.load(os.path.join(outputs_dir, "sigma.npy"))
@@ -372,31 +384,6 @@ def extract_cell_data():
 
     plt.savefig(os.path.join(outputs_dir, "mohr_circles_plots.png"), dpi=300)
     plt.close()
-
-    json_path = os.path.join(sigma_dir, "../params.json")
-    with open(json_path, "r") as f:
-        params = json.load(f)
-
-    df = pd.json_normalize(params)
-    df.columns = [col.split(".")[-1] if "." in col else col for col in df.columns]
-    cols_to_drop = [
-        "neighbour_search",
-        "n_procs",
-        "t_settle",
-        "t_compression",
-        "t_shear",
-        "processor",
-    ]
-    df.drop(columns=cols_to_drop, inplace=True)
-    df["ffc"] = ffc
-    df["sigma_unc"] = sigma_c
-    df["sigma_conf"] = sigma_u
-    df["phi_i"] = phi_i
-    df["phi_eff"] = phi_eff
-    df["fit_method"] = method
-
-    with sqlite3.connect(os.path.abspath("../../results.db")) as conn:
-        df.to_sql("parallel_shear", conn, if_exists="append", index=True)
 
 
 get_params()

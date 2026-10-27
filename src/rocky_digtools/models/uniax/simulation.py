@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from ...particles_shapes import normalise_radius
 from ...pyrocky.helpers import pyrocky_run
 from .. import PyrockySimulation
 from .compr_meshgen import create_meshes
@@ -44,6 +45,10 @@ class Settings:
         fric_dyn_pw: Dynamic friction coefficient (particle–wall).
         fric_stat_pw: Static friction coefficient (particle–wall).
         cor_pw: Coefficient of restitution (particle–wall).
+        tang_stiff_ratio_pp: Particle-particle tangential stiffness ratio.
+        tang_stiff_ratio_pw: Particle-wall tangential stiffness ratio.
+        surf_en_pp: Particle-particle surface energy (J/m²).
+        surf_en_pw: Particle-wall surface energy (J/m²).
         normal_force_model: Normal contact force model.
         tangential_force_model: Tangential contact force model.
         adhesion_model: Adhesion model.
@@ -81,6 +86,10 @@ class Settings:
     fric_stat_pw: float
     cor_pw: float
 
+    tang_stiff_ratio_pp: Optional[float] = None
+    tang_stiff_ratio_pw: Optional[float] = None
+    surf_en_pp: float = 0.0
+    surf_en_pw: float = 0.0
     normal_force_model: Literal["linear_hysteresis", "hertz", "linear_spring"] = (
         "linear_hysteresis"
     )
@@ -110,6 +119,7 @@ class Settings:
     smoothness: Optional[float] = None
 
     def __post_init__(self):
+        self.p_radius = normalise_radius(self.p_radius)
         if self.mesh_dir is None:
             self.mesh_dir = (
                 pathlib.Path(self.project_dir).parent
@@ -178,6 +188,8 @@ class Settings:
             "fric_stat_pp": self.fric_stat_pp,
             "fric_dyn_pw": self.fric_dyn_pw,
             "fric_stat_pw": self.fric_stat_pw,
+            "surf_en_pp": self.surf_en_pp,
+            "surf_en_pw": self.surf_en_pw,
             "rolling_fric": self.rolling_fric,
             "vert_ar": self.vert_ar,
             "horiz_ar": self.horiz_ar,
@@ -186,25 +198,12 @@ class Settings:
             if val < 0:
                 errors.append(f"'{name}' must be >= 0, got {val}.")
 
-        # --- p_radius ---
-        if isinstance(self.p_radius, float):
-            if self.p_radius <= 0:
-                errors.append(f"'p_radius' must be > 0, got {self.p_radius}.")
-        elif isinstance(self.p_radius, dict):
-            if not self.p_radius:
-                errors.append("'p_radius' dict must not be empty.")
-            else:
-                if any(r <= 0 for r in self.p_radius.keys()):
-                    errors.append("All radii in 'p_radius' dict must be > 0.")
-                prob_sum = sum(self.p_radius.values())
-                if not (np.isclose(prob_sum, 1.0) or np.isclose(prob_sum, 100.0)):
-                    errors.append(
-                        f"'p_radius' probabilities must sum to 1 or 100, got {prob_sum}."
-                    )
-        else:
-            errors.append(
-                f"'p_radius' must be a float or dict, got {type(self.p_radius)}."
-            )
+        for name, val in {
+            "tang_stiff_ratio_pp": self.tang_stiff_ratio_pp,
+            "tang_stiff_ratio_pw": self.tang_stiff_ratio_pw,
+        }.items():
+            if val is not None and val < 0:
+                errors.append(f"'{name}' must be >= 0, got {val}.")
 
         # --- Enum-like string fields ---
         valid_normal = {"linear_hysteresis", "hertz", "linear_spring"}
@@ -226,6 +225,12 @@ class Settings:
             errors.append(
                 f"'adhesion_model' must be one of {valid_adhesion}, "
                 f"got '{self.adhesion_model}'."
+            )
+        elif (
+            self.adhesion_model == "JKR" and min(self.surf_en_pp, self.surf_en_pw) <= 0
+        ):
+            errors.append(
+                "'surf_en_pp' and 'surf_en_pw' must be > 0 for the JKR model."
             )
 
         valid_rolling = {"none", "type_a", "type_b"}
@@ -318,8 +323,8 @@ class Settings:
 
         shape = data["shape"]
         props = data["particle_properties"]
-        inter = data["inseractions"]  # note: typo in JSON preserved
-        exp = data["experim_settings"]
+        inter = data["interactions"]
+        exp = data["experiment_settings"]
         contact = data["contact_model"]
 
         return cls(
@@ -335,14 +340,18 @@ class Settings:
             p_density=props["density"],
             p_poisson=props["poisson"],
             p_youngmod=props["youngmod"],
+            rolling_fric=props.get("fric_rolling", 0.0),
             # Interactions
             fric_dyn_pp=inter["pp"]["fric_dyn"],
             fric_stat_pp=inter["pp"]["fric_stat"],
             cor_pp=inter["pp"]["cor"],
-            rolling_fric=inter["pp"].get("fric_rolling", 0.0),
+            tang_stiff_ratio_pp=inter["pp"].get("tang_stiff_ratio"),
+            surf_en_pp=inter["pp"].get("surf_en", 0.0),
             fric_dyn_pw=inter["pw"]["fric_dyn"],
             fric_stat_pw=inter["pw"]["fric_stat"],
             cor_pw=inter["pw"]["cor"],
+            tang_stiff_ratio_pw=inter["pw"].get("tang_stiff_ratio"),
+            surf_en_pw=inter["pw"].get("surf_en", 0.0),
             # Experiment settings
             particle_box_len=exp["box_len"],
             p_compress=exp["p_compress"],
@@ -440,7 +449,7 @@ class UniaxialCompressionSimulation(PyrockySimulation):
 
         insert_stl_path = (mesh_dir / "insert.stl").resolve()
         insert_inlet = self._study.ImportSurface(
-            str(insert_stl_path), import_scale=1.0, convert_yz=True
+            str(insert_stl_path), import_scale=0.98, convert_yz=True
         )[0]
         insert_inlet.SetName("Insert Inlet")  # <-- set explicit name
         insert_inlet.SetPivotPoint([0, 0, 0])
