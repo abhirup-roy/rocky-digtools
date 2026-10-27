@@ -235,7 +235,7 @@ def simulate() -> None:
     solver.SetTimestepModel("variable")
     solver.SetSimulationDuration(duration, "s")
     project.SaveProject()
-    study.StartSimulation(non_blocking=True)
+    study.StartSimulation(skip_summary=True)
     while study.IsSimulating():
         study.RefreshResults()
         print(f"Simulation Progress: {study.GetProgress():.2f} %")

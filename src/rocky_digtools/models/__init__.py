@@ -288,7 +288,7 @@ class PyrockySimulation(_abc.ABC):
         self._project.SaveProject()
 
         print(f"Starting simulation with {solver.GetSimulationTarget()} solver...")
-        self._study.StartSimulation(non_blocking=True)
+        self._study.StartSimulation(skip_summary=True)
 
         while self._study.IsSimulating():
             self._study.RefreshResults()
