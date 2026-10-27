@@ -286,9 +286,7 @@ class Settings:
         if self.n_procs < 1:
             errors.append(f"'n_procs' must be >= 1, got {self.n_procs}.")
         if self.shear_run_days < 1:
-            errors.append(
-                f"'shear_run_days' must be >= 1, got {self.shear_run_days}."
-            )
+            errors.append(f"'shear_run_days' must be >= 1, got {self.shear_run_days}.")
 
         valid_shapes = {"sphere", "polyhedron", "sphero_cylinder", "custom_polyhedron"}
         if self.shape_name not in valid_shapes:

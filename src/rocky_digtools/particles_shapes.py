@@ -22,16 +22,25 @@ def normalise_radius(radius: float | dict) -> float | dict[float, float]:
         raise TypeError("Radius must be a number or a non-empty dictionary.")
 
     try:
-        distribution = {float(size): float(fraction) for size, fraction in radius.items()}
+        distribution = {
+            float(size): float(fraction) for size, fraction in radius.items()
+        }
     except (TypeError, ValueError) as exc:
-        raise ValueError("Radius distribution keys and values must be numeric.") from exc
+        raise ValueError(
+            "Radius distribution keys and values must be numeric."
+        ) from exc
     if len(distribution) != len(radius):
         raise ValueError("Radius distribution contains duplicate numeric sizes.")
     if any(not np.isfinite(size) or size <= 0 for size in distribution):
         raise ValueError("All particle radii must be positive finite numbers.")
-    if any(not np.isfinite(fraction) or fraction < 0 for fraction in distribution.values()):
+    if any(
+        not np.isfinite(fraction) or fraction < 0 for fraction in distribution.values()
+    ):
         raise ValueError("All radius fractions must be non-negative finite numbers.")
-    if not (np.isclose(sum(distribution.values()), 1) or np.isclose(sum(distribution.values()), 100)):
+    if not (
+        np.isclose(sum(distribution.values()), 1)
+        or np.isclose(sum(distribution.values()), 100)
+    ):
         raise ValueError("Radius fractions must sum to 1 or 100.")
     return distribution
 
@@ -122,7 +131,9 @@ class Shape:
         else:
             self.size_type = size_type
 
-    def particle2rocky(self, particle: Any, material: Any, rolling_friction: float = 0.0) -> None:
+    def particle2rocky(
+        self, particle: Any, material: Any, rolling_friction: float = 0.0
+    ) -> None:
         """Apply this shape's parameters to a Rocky particle object.
 
         Sets the size distribution, material, shape type, and optional
@@ -266,7 +277,9 @@ class CustomPolyhedron(Shape):
             self.stl_path = stl_path
         super().__init__(shape_type="custom_polyhedron", radius=radius)
 
-    def particle2rocky(self, particle: Any, material: Any, rolling_friction: float = 0.0) -> None:
+    def particle2rocky(
+        self, particle: Any, material: Any, rolling_friction: float = 0.0
+    ) -> None:
         """Apply the custom polyhedron shape to a Rocky particle.
 
         Imports the STL geometry and assigns the material and rolling

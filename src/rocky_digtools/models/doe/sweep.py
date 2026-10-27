@@ -82,7 +82,9 @@ def launch_sweep(
 
     target_quoted = f'"{target}"'
 
-    rocky_template = load_template(runtime, template_dir) if backend == "rocky_prepost" else None
+    rocky_template = (
+        load_template(runtime, template_dir) if backend == "rocky_prepost" else None
+    )
 
     all_params = list(iter_params(json_path, schema))
     total_cases = len(all_params)

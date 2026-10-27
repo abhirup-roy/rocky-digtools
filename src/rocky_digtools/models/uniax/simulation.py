@@ -226,9 +226,9 @@ class Settings:
                 f"'adhesion_model' must be one of {valid_adhesion}, "
                 f"got '{self.adhesion_model}'."
             )
-        elif self.adhesion_model == "JKR" and min(
-            self.surf_en_pp, self.surf_en_pw
-        ) <= 0:
+        elif (
+            self.adhesion_model == "JKR" and min(self.surf_en_pp, self.surf_en_pw) <= 0
+        ):
             errors.append(
                 "'surf_en_pp' and 'surf_en_pw' must be > 0 for the JKR model."
             )
